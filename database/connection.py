@@ -24,5 +24,10 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
         for statement in schema.split(";"):
             if statement.strip():
                 cursor.execute(statement)
+        cursor.execute("SHOW COLUMNS FROM clients LIKE 'archived_at'")
+        if cursor.fetchone() is None:
+            cursor.execute(
+                "ALTER TABLE clients ADD COLUMN archived_at VARCHAR(40) NULL"
+            )
     finally:
         cursor.close()

@@ -6,6 +6,14 @@ import mysql.connector
 
 from database.authentication import initialize_password, verify_password
 from database.connection import connect_database, initialize_database
+from database.queries import (
+    archive_client,
+    load_archived_clients,
+    load_data,
+    restore_client,
+    save_record,
+    update_client,
+)
 
 
 MAX_ATTEMPTS = 3
@@ -17,120 +25,17 @@ MENU_OPTIONS = (
     "Payment history",
     "Machine maintenance record",
 )
-def insert_record(
-    cursor: mysql.connector.cursor.MySQLCursor,
-    collection: str,
-    record: dict[str, str],
-) -> None:
-    if collection == "clients":
-        statement = (
-            "INSERT INTO clients "
-            "(client_id, name, contact, membership, created_at) "
-            "VALUES (%s, %s, %s, %s, %s)"
-        )
-        values = (
-            record["client_id"],
-            record["name"],
-            record["contact"],
-            record["membership"],
-            record["created_at"],
-        )
-    elif collection == "attendance":
-        statement = (
-            "INSERT INTO attendance (client_id, client_name, timestamp) "
-            "VALUES (%s, %s, %s)"
-        )
-        values = (record["client_id"], record["client_name"], record["timestamp"])
-    elif collection == "payments":
-        statement = (
-            "INSERT INTO payments "
-            "(client_id, client_name, amount, description, timestamp) "
-            "VALUES (%s, %s, %s, %s, %s)"
-        )
-        values = (
-            record["client_id"],
-            record["client_name"],
-            record["amount"],
-            record["description"],
-            record["timestamp"],
-        )
-    elif collection == "maintenance":
-        statement = (
-            "INSERT INTO maintenance (machine, description, cost, timestamp) "
-            "VALUES (%s, %s, %s, %s)"
-        )
-        values = (
-            record["machine"],
-            record["description"],
-            record["cost"],
-            record["timestamp"],
-        )
-    else:
-        raise ValueError(f"Unknown data collection: {collection}")
-    cursor.execute(statement, values)
-
-
-def load_data(
-    connection: mysql.connector.MySQLConnection,
-) -> dict[str, list[dict[str, str]]]:
-    queries = {
-        "clients": (
-            "SELECT client_id, name, contact, membership, created_at "
-            "FROM clients ORDER BY id"
-        ),
-        "attendance": (
-            "SELECT client_id, client_name, timestamp "
-            "FROM attendance ORDER BY id"
-        ),
-        "payments": (
-            "SELECT client_id, client_name, amount, description, timestamp "
-            "FROM payments ORDER BY id"
-        ),
-        "maintenance": (
-            "SELECT machine, description, cost, timestamp "
-            "FROM maintenance ORDER BY id"
-        ),
-    }
-    data: dict[str, list[dict[str, str]]] = {}
-    cursor = connection.cursor(dictionary=True)
-    try:
-        for collection, query in queries.items():
-            cursor.execute(query)
-            records = cursor.fetchall()
-            data[collection] = [
-                {
-                    key: format(value, ".2f")
-                    if isinstance(value, Decimal)
-                    else str(value)
-                    for key, value in record.items()
-                }
-                for record in records
-            ]
-    finally:
-        cursor.close()
-    return data
-
-
-def save_record(
-    connection: mysql.connector.MySQLConnection,
-    data: dict[str, list[dict[str, str]]],
-    collection: str,
-    record: dict[str, str],
-) -> None:
-    cursor = connection.cursor()
-    try:
-        insert_record(cursor, collection, record)
-        connection.commit()
-    except mysql.connector.Error:
-        connection.rollback()
-        raise
-    finally:
-        cursor.close()
-    data[collection].append(record)
 
 
 def current_timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def format_created_at(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value).strftime("%B %d, %Y")
+    except ValueError:
+        return f"Invalid date: {value}"
 
 
 def prompt_required(label: str) -> str:
@@ -171,14 +76,12 @@ def next_client_id(clients: list[dict[str, str]]) -> str:
 
 
 def select_client(data: dict[str, list[dict[str, str]]]) -> dict[str, str] | None:
-    clients = data["clients"]
+    clients = [
+        client for client in data["clients"] if not client.get("archived_at")
+    ]
     if not clients:
-        print("There are no client profiles yet. Add a client profile first.")
+        print("There are no active client profiles. Add a client profile first.")
         return None
-
-    print("\nRegistered clients:")
-    for client in clients:
-        print(f"  {client['client_id']} - {client['name']}")
 
     client_id = prompt_required("Enter client ID: ").upper()
     for client in clients:
@@ -218,33 +121,178 @@ def login(connection: mysql.connector.MySQLConnection) -> bool:
 
 
 def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
-    clients = data["clients"]
+    clients = [
+        client for client in data["clients"] if not client.get("archived_at")
+    ]
     print("\nCLIENT RECORDS")
     if not clients:
-        print("No client profiles found.")
+        print("No active client profiles found.")
         return
 
+    columns = ("Client ID", "Name", "Contact", "Membership", "Created At")
+    rows = [
+        (
+            client["client_id"],
+            client["name"],
+            client["contact"],
+            client["membership"],
+            format_created_at(client["created_at"]),
+        )
+        for client in clients
+    ]
+    widths = [
+        max(len(columns[index]), *(len(row[index]) for row in rows))
+        for index in range(len(columns))
+    ]
+
+    def format_row(values: tuple[str, ...]) -> str:
+        return "| " + " | ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        ) + " |"
+
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+    print(separator)
+    print(format_row(columns))
+    print(separator)
     for client in clients:
         print(
-            f"{client['client_id']} | {client['name']} | "
-            f"Contact: {client['contact']} | Plan: {client['membership']}"
+            format_row(
+                (
+                    client["client_id"],
+                    client["name"],
+                    client["contact"],
+                    client["membership"],
+                    format_created_at(client["created_at"]),
+                )
+            )
         )
+    print(separator)
 
 
 def add_client(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
 ) -> None:
+    show_clients(data)
+
     print("\nADD CLIENT PROFILE")
+    name = prompt_required("Full name: ")
+    contact = prompt_required("Contact number: ")
+
+    normalized_name = " ".join(name.casefold().split())
+    normalized_contact = "".join(
+        character for character in contact if character.isdigit()
+    ) or contact.casefold().strip()
+    duplicate = next(
+        (
+            client
+            for client in data["clients"]
+            if not client.get("archived_at")
+            and " ".join(client["name"].casefold().split()) == normalized_name
+            and (
+                "".join(
+                    character
+                    for character in client["contact"]
+                    if character.isdigit()
+                )
+                or client["contact"].casefold().strip()
+            )
+            == normalized_contact
+        ),
+        None,
+    )
+    if duplicate is not None:
+        print(
+            f"An active profile already exists for {duplicate['name']} "
+            f"({duplicate['client_id']}). Client was not added."
+        )
+        return
+
     record = {
         "client_id": next_client_id(data["clients"]),
-        "name": prompt_required("Full name: "),
-        "contact": prompt_required("Contact number: "),
+        "name": name,
+        "contact": contact,
         "membership": prompt_required("Membership plan: "),
         "created_at": current_timestamp(),
+        "archived_at": "",
     }
     save_record(connection, data, "clients", record)
     print(f"Client profile saved. Client ID: {record['client_id']}")
+
+
+def update_client_profile(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    show_clients(data)
+    print("\nUPDATE CLIENT PROFILE")
+    client = select_client(data)
+    if client is None:
+        return
+
+    print("Press Enter to keep the current value.")
+    name = input(f"Full name [{client['name']}]: ").strip() or client["name"]
+    contact = input(f"Contact number [{client['contact']}]: ").strip() or client[
+        "contact"
+    ]
+    membership = input(
+        f"Membership plan [{client['membership']}]: "
+    ).strip() or client["membership"]
+
+    normalized_name = " ".join(name.casefold().split())
+    normalized_contact = "".join(
+        character for character in contact if character.isdigit()
+    ) or contact.casefold().strip()
+    duplicate = next(
+        (
+            existing
+            for existing in data["clients"]
+            if existing["client_id"] != client["client_id"]
+            and not existing.get("archived_at")
+            and " ".join(existing["name"].casefold().split()) == normalized_name
+            and (
+                "".join(
+                    character
+                    for character in existing["contact"]
+                    if character.isdigit()
+                )
+                or existing["contact"].casefold().strip()
+            )
+            == normalized_contact
+        ),
+        None,
+    )
+    if duplicate is not None:
+        print(
+            f"An active profile already exists for {duplicate['name']} "
+            f"({duplicate['client_id']}). Client was not updated."
+        )
+        return
+
+    print(
+        "\nNew client details:\n"
+        f"  Name: {name}\n"
+        f"  Contact: {contact}\n"
+        f"  Membership: {membership}"
+    )
+    confirmation = input(
+        f"Are you sure you want to update client {client['client_id']}? (y/N): "
+    ).strip().lower()
+    if confirmation != "y":
+        print("Update cancelled.")
+        return
+
+    if update_client(
+        connection,
+        client["client_id"],
+        name,
+        contact,
+        membership,
+    ):
+        client.update(name=name, contact=contact, membership=membership)
+        print(f"Client profile {client['client_id']} updated.")
+    else:
+        print("That client is no longer active.")
 
 
 def log_attendance(
@@ -315,12 +363,170 @@ def record_maintenance(
     print(f"Maintenance record saved for {record['machine']}.")
 
 
+def delete_client_record(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    show_clients(data)
+    print("\nDELETE CLIENT RECORD (ARCHIVE)")
+    client = select_client(data)
+    if client is None:
+        return
+
+    confirmation = input(
+        f"Archive {client['name']} ({client['client_id']})? (y/N): "
+    ).strip().lower()
+    if confirmation != "y":
+        print("Archive cancelled.")
+        return
+
+    archived_at = current_timestamp()
+    if archive_client(connection, client["client_id"], archived_at):
+        client["archived_at"] = archived_at
+        print(f"Client {client['client_id']} archived.")
+    else:
+        print("That client is no longer active.")
+
+
+def display_archived_clients_table(
+    archived_clients: list[dict[str, str]],
+) -> None:
+    print("\nARCHIVED CLIENTS")
+    if not archived_clients:
+        print("No archived clients found.")
+        return
+
+    columns = (
+        "Client ID",
+        "Name",
+        "Contact",
+        "Membership",
+        "Created At",
+        "Archived At",
+    )
+    rows = [
+        (
+            client["client_id"],
+            client["name"],
+            client["contact"],
+            client["membership"],
+            format_created_at(client["created_at"]),
+            format_created_at(client["archived_at"]),
+        )
+        for client in archived_clients
+    ]
+    widths = [
+        max(len(columns[index]), *(len(row[index]) for row in rows))
+        for index in range(len(columns))
+    ]
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+
+    def format_row(values: tuple[str, ...]) -> str:
+        return "| " + " | ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        ) + " |"
+
+    print(separator)
+    print(format_row(columns))
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+    print(separator)
+
+
+def show_archived_clients(
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    archived_clients = load_archived_clients(connection)
+    display_archived_clients_table(archived_clients)
+
+    input("\nPress Enter to return to the Client Records menu...")
+
+
+def restore_archived_client(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    print("\nRESTORE ARCHIVED CLIENT")
+    archived_clients = load_archived_clients(connection)
+    if not archived_clients:
+        print("There are no archived clients to restore.")
+        return
+
+    display_archived_clients_table(archived_clients)
+
+    client_id = prompt_required("Enter client ID to restore: ").upper()
+    client = next(
+        (
+            archived
+            for archived in archived_clients
+            if archived["client_id"].upper() == client_id
+        ),
+        None,
+    )
+    if client is None:
+        print("No archived client found with that ID.")
+        return
+
+    confirmation = input(
+        f"Are you sure you want to restore {client['name']} ({client['client_id']})? (y/N): "
+    ).strip().lower()
+    if confirmation != "y":
+        print("Restore cancelled.")
+        return
+
+    if restore_client(connection, client["client_id"]):
+        for existing_client in data["clients"]:
+            if existing_client["client_id"] == client["client_id"]:
+                existing_client["archived_at"] = ""
+                break
+        print(f"Client {client['client_id']} restored.")
+    else:
+        print("That client is no longer archived.")
+
+
+def client_records_menu(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    actions = (
+        lambda: update_client_profile(data, connection),
+        lambda: delete_client_record(data, connection),
+        lambda: restore_archived_client(data, connection),
+        lambda: show_archived_clients(connection),
+    )
+    options = (
+        "Update client profile",
+        "Delete client profile",
+        "Restore archived client",
+        "View archived clients",
+    )
+    while True:
+        show_clients(data)
+        print("\nCLIENT RECORDS MENU")
+        for number, option in enumerate(options, start=1):
+            print(f"  {number}. {option}")
+        print(f"  {len(actions) + 1}. Back to main menu")
+
+        choice = input("\nChoose an option: ").strip()
+        if choice == str(len(actions) + 1):
+            return
+        if not choice.isdigit() or not 1 <= int(choice) <= len(actions):
+            print(f"Invalid option. Choose a number from 1 to {len(actions) + 1}.")
+            continue
+
+        try:
+            actions[int(choice) - 1]()
+        except mysql.connector.Error as error:
+            print(f"Could not update MySQL records: {error}")
+
+
 def show_menu(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
 ) -> None:
     actions = (
-        show_clients,
+        lambda records: client_records_menu(records, connection),
         lambda records: add_client(records, connection),
         lambda records: log_attendance(records, connection),
         lambda records: record_payment(records, connection),
@@ -333,21 +539,24 @@ def show_menu(
         print("=" * 42)
         for number, option in enumerate(MENU_OPTIONS, start=1):
             print(f"  {number}. {option}")
-        print("  7. Logout")
+        print(f"  {len(actions) + 1}. Logout")
 
         choice = input("\nChoose an option: ").strip()
-        if choice == "7":
+        if choice == str(len(actions) + 1):
             print("Logged out. Goodbye!")
             return
 
         if not choice.isdigit() or not 1 <= int(choice) <= len(actions):
-            print("Invalid option. Please choose a number from 1 to 7.")
+            print(
+                f"Invalid option. Please choose a number from 1 to "
+                f"{len(actions) + 1}."
+            )
             continue
 
         try:
             actions[int(choice) - 1](data)
         except mysql.connector.Error as error:
-            print(f"Could not save the record to MySQL: {error}")
+            print(f"Could not update MySQL records: {error}")
 
 
 def main() -> None:

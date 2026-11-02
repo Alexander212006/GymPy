@@ -26,11 +26,17 @@ $env:MYSQL_PASSWORD = "your-password"
 $env:MYSQL_DATABASE = "gympy"
 ```
 
-The MySQL connection settings are in `database/connection.py`, and the table
-definitions are in `database/schema.sql`. GymPy creates the tables on startup
-and stores all records directly in MySQL.
+The MySQL connection settings are in `database/connection.py`, SQL queries are
+in `database/queries.py`, and table definitions are in
+`database/schema.sql`. GymPy creates the tables on startup and stores all
+records directly in MySQL.
 
 On the first startup, GymPy prompts you to enter and confirm a shared login
 password. It stores only a salted PBKDF2 hash in the `app_credentials` table
 and logs you in after setup. Run the program in a terminal so the hidden
 password prompts can receive input.
+
+The **Client records** main-menu option opens a submenu to view and update
+active clients, archive a client, restore a client, and view archived profiles.
+Archived clients are hidden from active client lists and attendance/payment
+selection, while their historical records remain in the database.

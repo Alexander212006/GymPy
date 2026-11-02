@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS clients (
     name VARCHAR(255) NOT NULL,
     contact VARCHAR(100) NOT NULL,
     membership VARCHAR(100) NOT NULL,
-    created_at VARCHAR(40) NOT NULL
+    created_at VARCHAR(40) NOT NULL,
+    archived_at VARCHAR(40) NULL
 );
 
 CREATE TABLE IF NOT EXISTS attendance (
