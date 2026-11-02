@@ -44,3 +44,7 @@ selection, while their historical records remain in the database.
 New client profiles require an 11-digit phone number starting with `09` and a
 valid email address. Existing databases receive the email column automatically
 on startup.
+
+The main menu's **Attendance records** option displays logged attendance
+entries; **Log client attendance** remains a separate option for recording a
+new visit.

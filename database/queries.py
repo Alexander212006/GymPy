@@ -67,8 +67,11 @@ def load_data(
             "FROM clients ORDER BY id"
         ),
         "attendance": (
-            "SELECT client_id, client_name, timestamp "
-            "FROM attendance ORDER BY id"
+            "SELECT attendance.client_id, attendance.client_name, "
+            "COALESCE(clients.email, '') AS email, attendance.timestamp "
+            "FROM attendance LEFT JOIN clients "
+            "ON clients.client_id = attendance.client_id "
+            "ORDER BY attendance.id"
         ),
         "payments": (
             "SELECT client_id, client_name, amount, description, timestamp "
@@ -118,6 +121,23 @@ def load_archived_clients(
             }
             for record in cursor.fetchall()
         ]
+    finally:
+        cursor.close()
+
+
+def has_attendance_on_date(
+    connection: mysql.connector.MySQLConnection,
+    client_id: str,
+    attendance_date: str,
+) -> bool:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM attendance "
+            "WHERE client_id = %s AND timestamp LIKE %s LIMIT 1",
+            (client_id, f"{attendance_date}%"),
+        )
+        return cursor.fetchone() is not None
     finally:
         cursor.close()
 
