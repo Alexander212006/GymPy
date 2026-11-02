@@ -1,13 +1,14 @@
 import getpass
-import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
+
+import mysql.connector
+
+from database.authentication import initialize_password, verify_password
+from database.connection import connect_database, initialize_database
 
 
-LOGIN_PASSWORD = "gympy123"
 MAX_ATTEMPTS = 3
-DATA_FILE = Path(__file__).with_name("gym_data.json")
 MENU_OPTIONS = (
     "Client records",
     "Add client profile",
@@ -16,58 +17,115 @@ MENU_OPTIONS = (
     "Payment history",
     "Machine maintenance record",
 )
-DATA_COLLECTIONS = ("clients", "attendance", "payments", "maintenance")
-REQUIRED_FIELDS = {
-    "clients": {"client_id", "name", "contact", "membership", "created_at"},
-    "attendance": {"client_id", "client_name", "timestamp"},
-    "payments": {
-        "client_id",
-        "client_name",
-        "amount",
-        "description",
-        "timestamp",
-    },
-    "maintenance": {"machine", "description", "cost", "timestamp"},
-}
+def insert_record(
+    cursor: mysql.connector.cursor.MySQLCursor,
+    collection: str,
+    record: dict[str, str],
+) -> None:
+    if collection == "clients":
+        statement = (
+            "INSERT INTO clients "
+            "(client_id, name, contact, membership, created_at) "
+            "VALUES (%s, %s, %s, %s, %s)"
+        )
+        values = (
+            record["client_id"],
+            record["name"],
+            record["contact"],
+            record["membership"],
+            record["created_at"],
+        )
+    elif collection == "attendance":
+        statement = (
+            "INSERT INTO attendance (client_id, client_name, timestamp) "
+            "VALUES (%s, %s, %s)"
+        )
+        values = (record["client_id"], record["client_name"], record["timestamp"])
+    elif collection == "payments":
+        statement = (
+            "INSERT INTO payments "
+            "(client_id, client_name, amount, description, timestamp) "
+            "VALUES (%s, %s, %s, %s, %s)"
+        )
+        values = (
+            record["client_id"],
+            record["client_name"],
+            record["amount"],
+            record["description"],
+            record["timestamp"],
+        )
+    elif collection == "maintenance":
+        statement = (
+            "INSERT INTO maintenance (machine, description, cost, timestamp) "
+            "VALUES (%s, %s, %s, %s)"
+        )
+        values = (
+            record["machine"],
+            record["description"],
+            record["cost"],
+            record["timestamp"],
+        )
+    else:
+        raise ValueError(f"Unknown data collection: {collection}")
+    cursor.execute(statement, values)
 
 
-def load_data() -> dict[str, list[dict[str, str]]]:
+def load_data(
+    connection: mysql.connector.MySQLConnection,
+) -> dict[str, list[dict[str, str]]]:
+    queries = {
+        "clients": (
+            "SELECT client_id, name, contact, membership, created_at "
+            "FROM clients ORDER BY id"
+        ),
+        "attendance": (
+            "SELECT client_id, client_name, timestamp "
+            "FROM attendance ORDER BY id"
+        ),
+        "payments": (
+            "SELECT client_id, client_name, amount, description, timestamp "
+            "FROM payments ORDER BY id"
+        ),
+        "maintenance": (
+            "SELECT machine, description, cost, timestamp "
+            "FROM maintenance ORDER BY id"
+        ),
+    }
+    data: dict[str, list[dict[str, str]]] = {}
+    cursor = connection.cursor(dictionary=True)
     try:
-        contents = DATA_FILE.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {collection: [] for collection in DATA_COLLECTIONS}
-
-    try:
-        data = json.loads(contents)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"{DATA_FILE.name} contains invalid JSON.") from error
-
-    if not isinstance(data, dict) or any(
-        not isinstance(data.get(collection), list) for collection in DATA_COLLECTIONS
-    ):
-        raise ValueError(f"{DATA_FILE.name} has an invalid data structure.")
-    if any(
-        not isinstance(record, dict)
-        or not REQUIRED_FIELDS[collection].issubset(record)
-        or any(not isinstance(value, str) for value in record.values())
-        for collection in DATA_COLLECTIONS
-        for record in data[collection]
-    ):
-        raise ValueError(f"{DATA_FILE.name} contains an invalid record.")
-
-    return {collection: data[collection] for collection in DATA_COLLECTIONS}
+        for collection, query in queries.items():
+            cursor.execute(query)
+            records = cursor.fetchall()
+            data[collection] = [
+                {
+                    key: format(value, ".2f")
+                    if isinstance(value, Decimal)
+                    else str(value)
+                    for key, value in record.items()
+                }
+                for record in records
+            ]
+    finally:
+        cursor.close()
+    return data
 
 
 def save_record(
+    connection: mysql.connector.MySQLConnection,
     data: dict[str, list[dict[str, str]]],
     collection: str,
     record: dict[str, str],
 ) -> None:
-    updated_data = {**data, collection: [*data[collection], record]}
-    DATA_FILE.write_text(
-        json.dumps(updated_data, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    cursor = connection.cursor()
+    try:
+        insert_record(cursor, collection, record)
+        connection.commit()
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
     data[collection].append(record)
 
 
@@ -139,10 +197,15 @@ def show_welcome() -> None:
     print()
 
 
-def login() -> bool:
+def login(connection: mysql.connector.MySQLConnection) -> bool:
+    password_hash, initialized = initialize_password(connection)
+    if initialized:
+        print("\nPassword saved. Welcome to GymPy!")
+        return True
+
     for attempt in range(MAX_ATTEMPTS):
         entered_password = getpass.getpass("Enter password: ")
-        if entered_password == LOGIN_PASSWORD:
+        if verify_password(entered_password, password_hash):
             print("\nAccess granted. Welcome to GymPy!")
             return True
 
@@ -168,7 +231,10 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
         )
 
 
-def add_client(data: dict[str, list[dict[str, str]]]) -> None:
+def add_client(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
     print("\nADD CLIENT PROFILE")
     record = {
         "client_id": next_client_id(data["clients"]),
@@ -177,11 +243,14 @@ def add_client(data: dict[str, list[dict[str, str]]]) -> None:
         "membership": prompt_required("Membership plan: "),
         "created_at": current_timestamp(),
     }
-    save_record(data, "clients", record)
+    save_record(connection, data, "clients", record)
     print(f"Client profile saved. Client ID: {record['client_id']}")
 
 
-def log_attendance(data: dict[str, list[dict[str, str]]]) -> None:
+def log_attendance(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
     print("\nLOG CLIENT ATTENDANCE")
     client = select_client(data)
     if client is None:
@@ -192,11 +261,14 @@ def log_attendance(data: dict[str, list[dict[str, str]]]) -> None:
         "client_name": client["name"],
         "timestamp": current_timestamp(),
     }
-    save_record(data, "attendance", record)
+    save_record(connection, data, "attendance", record)
     print(f"Attendance logged for {client['name']}.")
 
 
-def record_payment(data: dict[str, list[dict[str, str]]]) -> None:
+def record_payment(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
     print("\nCLIENT PAYMENT")
     client = select_client(data)
     if client is None:
@@ -209,7 +281,7 @@ def record_payment(data: dict[str, list[dict[str, str]]]) -> None:
         "description": prompt_required("Payment description: "),
         "timestamp": current_timestamp(),
     }
-    save_record(data, "payments", record)
+    save_record(connection, data, "payments", record)
     print(f"Payment of {record['amount']} recorded for {client['name']}.")
 
 
@@ -228,7 +300,10 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
         )
 
 
-def record_maintenance(data: dict[str, list[dict[str, str]]]) -> None:
+def record_maintenance(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
     print("\nMACHINE MAINTENANCE RECORD")
     record = {
         "machine": prompt_required("Machine or equipment name: "),
@@ -236,18 +311,21 @@ def record_maintenance(data: dict[str, list[dict[str, str]]]) -> None:
         "cost": prompt_amount("Maintenance cost (enter 0 if none): ", allow_zero=True),
         "timestamp": current_timestamp(),
     }
-    save_record(data, "maintenance", record)
+    save_record(connection, data, "maintenance", record)
     print(f"Maintenance record saved for {record['machine']}.")
 
 
-def show_menu(data: dict[str, list[dict[str, str]]]) -> None:
+def show_menu(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
     actions = (
         show_clients,
-        add_client,
-        log_attendance,
-        record_payment,
+        lambda records: add_client(records, connection),
+        lambda records: log_attendance(records, connection),
+        lambda records: record_payment(records, connection),
         show_payment_history,
-        record_maintenance,
+        lambda records: record_maintenance(records, connection),
     )
     while True:
         print("\n" + "=" * 42)
@@ -268,19 +346,24 @@ def show_menu(data: dict[str, list[dict[str, str]]]) -> None:
 
         try:
             actions[int(choice) - 1](data)
-        except OSError as error:
-            print(f"Could not save the record: {error}")
+        except mysql.connector.Error as error:
+            print(f"Could not save the record to MySQL: {error}")
 
 
 def main() -> None:
     show_welcome()
-    if login():
-        try:
-            data = load_data()
-        except (OSError, ValueError) as error:
-            print(f"Could not load gym records: {error}")
-            return
-        show_menu(data)
+    connection = None
+    try:
+        connection = connect_database()
+        initialize_database(connection)
+        if login(connection):
+            data = load_data(connection)
+            show_menu(data, connection)
+    except (mysql.connector.Error, OSError, ValueError) as error:
+        print(f"Could not start GymPy: {error}")
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 if __name__ == "__main__":

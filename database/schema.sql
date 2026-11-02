@@ -1,0 +1,39 @@
+CREATE TABLE IF NOT EXISTS clients (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id VARCHAR(20) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    contact VARCHAR(100) NOT NULL,
+    membership VARCHAR(100) NOT NULL,
+    created_at VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attendance (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id VARCHAR(20) NOT NULL,
+    client_name VARCHAR(255) NOT NULL,
+    timestamp VARCHAR(40) NOT NULL,
+    FOREIGN KEY (client_id) REFERENCES clients (client_id)
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id VARCHAR(20) NOT NULL,
+    client_name VARCHAR(255) NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    timestamp VARCHAR(40) NOT NULL,
+    FOREIGN KEY (client_id) REFERENCES clients (client_id)
+);
+
+CREATE TABLE IF NOT EXISTS maintenance (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    machine VARCHAR(255) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    cost DECIMAL(10, 2) NOT NULL,
+    timestamp VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_credentials (
+    id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    password_hash VARCHAR(255) NOT NULL
+);
