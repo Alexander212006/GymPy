@@ -29,5 +29,11 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
             cursor.execute(
                 "ALTER TABLE clients ADD COLUMN archived_at VARCHAR(40) NULL"
             )
+        cursor.execute("SHOW COLUMNS FROM clients LIKE 'email'")
+        if cursor.fetchone() is None:
+            cursor.execute(
+                "ALTER TABLE clients "
+                "ADD COLUMN email VARCHAR(254) NOT NULL DEFAULT ''"
+            )
     finally:
         cursor.close()

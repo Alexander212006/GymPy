@@ -40,3 +40,7 @@ The **Client records** main-menu option opens a submenu to view and update
 active clients, archive a client, restore a client, and view archived profiles.
 Archived clients are hidden from active client lists and attendance/payment
 selection, while their historical records remain in the database.
+
+New client profiles require an 11-digit phone number starting with `09` and a
+valid email address. Existing databases receive the email column automatically
+on startup.

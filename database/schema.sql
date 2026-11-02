@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS clients (
     client_id VARCHAR(20) NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
     contact VARCHAR(100) NOT NULL,
+    email VARCHAR(254) NOT NULL DEFAULT '',
     membership VARCHAR(100) NOT NULL,
     created_at VARCHAR(40) NOT NULL,
     archived_at VARCHAR(40) NULL

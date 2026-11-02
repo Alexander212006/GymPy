@@ -11,13 +11,14 @@ def _insert_record(
     if collection == "clients":
         statement = (
             "INSERT INTO clients "
-            "(client_id, name, contact, membership, created_at) "
-            "VALUES (%s, %s, %s, %s, %s)"
+            "(client_id, name, contact, email, membership, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s)"
         )
         values = (
             record["client_id"],
             record["name"],
             record["contact"],
+            record["email"],
             record["membership"],
             record["created_at"],
         )
@@ -61,7 +62,7 @@ def load_data(
 ) -> dict[str, list[dict[str, str]]]:
     queries = {
         "clients": (
-            "SELECT client_id, name, contact, membership, created_at, "
+            "SELECT client_id, name, contact, email, membership, created_at, "
             "COALESCE(archived_at, '') AS archived_at "
             "FROM clients ORDER BY id"
         ),
@@ -104,7 +105,8 @@ def load_archived_clients(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, contact, membership, created_at, archived_at "
+            "SELECT client_id, name, contact, email, membership, "
+            "created_at, archived_at "
             "FROM clients WHERE archived_at IS NOT NULL ORDER BY id"
         )
         return [
@@ -143,14 +145,16 @@ def update_client(
     client_id: str,
     name: str,
     contact: str,
+    email: str,
     membership: str,
 ) -> bool:
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "UPDATE clients SET name = %s, contact = %s, membership = %s "
+            "UPDATE clients SET name = %s, contact = %s, email = %s, "
+            "membership = %s "
             "WHERE client_id = %s AND archived_at IS NULL",
-            (name, contact, membership, client_id),
+            (name, contact, email, membership, client_id),
         )
         if cursor.rowcount == 0:
             cursor.execute(

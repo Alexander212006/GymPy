@@ -1,4 +1,5 @@
 import getpass
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -25,6 +26,7 @@ MENU_OPTIONS = (
     "Payment history",
     "Machine maintenance record",
 )
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 
 
 def current_timestamp() -> str:
@@ -44,6 +46,28 @@ def prompt_required(label: str) -> str:
         if value:
             return value
         print("This field is required.")
+
+
+def prompt_phone(
+    label: str = "Contact number: ",
+    *,
+    current: str | None = None,
+) -> str:
+    while True:
+        suffix = input(f"{label}09").strip()
+        if current is not None and not suffix:
+            return current
+        if len(suffix) == 9 and suffix.isascii() and suffix.isdigit():
+            return f"09{suffix}"
+        print("Enter exactly 9 digits after the 09 prefix.")
+
+
+def prompt_email(label: str = "Email address: ") -> str:
+    while True:
+        email = input(label).strip()
+        if EMAIL_PATTERN.fullmatch(email):
+            return email
+        print("Enter a valid email address.")
 
 
 def prompt_amount(label: str, *, allow_zero: bool = False) -> str:
@@ -129,12 +153,13 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
         print("No active client profiles found.")
         return
 
-    columns = ("Client ID", "Name", "Contact", "Membership", "Created At")
+    columns = ("Client ID", "Name", "Contact", "Email", "Membership", "Created At")
     rows = [
         (
             client["client_id"],
             client["name"],
             client["contact"],
+            client["email"],
             client["membership"],
             format_created_at(client["created_at"]),
         )
@@ -161,6 +186,7 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
                     client["client_id"],
                     client["name"],
                     client["contact"],
+                    client["email"],
                     client["membership"],
                     format_created_at(client["created_at"]),
                 )
@@ -177,27 +203,23 @@ def add_client(
 
     print("\nADD CLIENT PROFILE")
     name = prompt_required("Full name: ")
-    contact = prompt_required("Contact number: ")
+    contact = prompt_phone()
+    email = prompt_email()
 
     normalized_name = " ".join(name.casefold().split())
-    normalized_contact = "".join(
-        character for character in contact if character.isdigit()
-    ) or contact.casefold().strip()
+    normalized_email = email.casefold()
     duplicate = next(
         (
             client
             for client in data["clients"]
             if not client.get("archived_at")
-            and " ".join(client["name"].casefold().split()) == normalized_name
             and (
-                "".join(
-                    character
-                    for character in client["contact"]
-                    if character.isdigit()
+                (
+                    " ".join(client["name"].casefold().split()) == normalized_name
+                    and client["contact"] == contact
                 )
-                or client["contact"].casefold().strip()
+                or client.get("email", "").casefold() == normalized_email
             )
-            == normalized_contact
         ),
         None,
     )
@@ -212,10 +234,23 @@ def add_client(
         "client_id": next_client_id(data["clients"]),
         "name": name,
         "contact": contact,
+        "email": email,
         "membership": prompt_required("Membership plan: "),
         "created_at": current_timestamp(),
         "archived_at": "",
     }
+    print(
+        "\nNew client details:\n"
+        f"  Name: {record['name']}\n"
+        f"  Contact: {record['contact']}\n"
+        f"  Email: {record['email']}\n"
+        f"  Membership: {record['membership']}"
+    )
+    confirmation = input("Are you sure you want to add this client? (y/N): ")
+    if confirmation.strip().lower() != "y":
+        print("Client profile creation cancelled.")
+        return
+
     save_record(connection, data, "clients", record)
     print(f"Client profile saved. Client ID: {record['client_id']}")
 
@@ -232,33 +267,39 @@ def update_client_profile(
 
     print("Press Enter to keep the current value.")
     name = input(f"Full name [{client['name']}]: ").strip() or client["name"]
-    contact = input(f"Contact number [{client['contact']}]: ").strip() or client[
-        "contact"
-    ]
+    contact = prompt_phone(
+        "Contact number (Enter to keep): ",
+        current=client["contact"],
+    )
+    email = input(f"Email address [{client.get('email', '')}] (Enter to keep): ").strip()
+    if email:
+        while not EMAIL_PATTERN.fullmatch(email):
+            print("Enter a valid email address.")
+            email = input("Email address: ").strip()
+    else:
+        email = client.get("email", "")
     membership = input(
         f"Membership plan [{client['membership']}]: "
     ).strip() or client["membership"]
 
     normalized_name = " ".join(name.casefold().split())
-    normalized_contact = "".join(
-        character for character in contact if character.isdigit()
-    ) or contact.casefold().strip()
+    normalized_email = email.casefold()
     duplicate = next(
         (
             existing
             for existing in data["clients"]
             if existing["client_id"] != client["client_id"]
             and not existing.get("archived_at")
-            and " ".join(existing["name"].casefold().split()) == normalized_name
             and (
-                "".join(
-                    character
-                    for character in existing["contact"]
-                    if character.isdigit()
+                (
+                    " ".join(existing["name"].casefold().split()) == normalized_name
+                    and existing["contact"] == contact
                 )
-                or existing["contact"].casefold().strip()
+                or (
+                    normalized_email
+                    and existing.get("email", "").casefold() == normalized_email
+                )
             )
-            == normalized_contact
         ),
         None,
     )
@@ -273,6 +314,7 @@ def update_client_profile(
         "\nNew client details:\n"
         f"  Name: {name}\n"
         f"  Contact: {contact}\n"
+        f"  Email: {email}\n"
         f"  Membership: {membership}"
     )
     confirmation = input(
@@ -287,9 +329,10 @@ def update_client_profile(
         client["client_id"],
         name,
         contact,
+        email,
         membership,
     ):
-        client.update(name=name, contact=contact, membership=membership)
+        client.update(name=name, contact=contact, email=email, membership=membership)
         print(f"Client profile {client['client_id']} updated.")
     else:
         print("That client is no longer active.")
@@ -400,6 +443,7 @@ def display_archived_clients_table(
         "Client ID",
         "Name",
         "Contact",
+        "Email",
         "Membership",
         "Created At",
         "Archived At",
@@ -409,6 +453,7 @@ def display_archived_clients_table(
             client["client_id"],
             client["name"],
             client["contact"],
+            client["email"],
             client["membership"],
             format_created_at(client["created_at"]),
             format_created_at(client["archived_at"]),
