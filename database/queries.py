@@ -11,8 +11,9 @@ def _insert_record(
     if collection == "clients":
         statement = (
             "INSERT INTO clients "
-            "(client_id, name, contact, email, membership, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s)"
+            "(client_id, name, contact, email, membership, is_pwd, "
+            "is_student, id_number, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         values = (
             record["client_id"],
@@ -20,6 +21,9 @@ def _insert_record(
             record["contact"],
             record["email"],
             record["membership"],
+            record["is_pwd"],
+            record["is_student"],
+            record["id_number"],
             record["created_at"],
         )
     elif collection == "attendance":
@@ -62,7 +66,8 @@ def load_data(
 ) -> dict[str, list[dict[str, str]]]:
     queries = {
         "clients": (
-            "SELECT client_id, name, contact, email, membership, created_at, "
+            "SELECT client_id, name, contact, email, membership, is_pwd, "
+            "is_student, id_number, created_at, "
             "COALESCE(archived_at, '') AS archived_at "
             "FROM clients ORDER BY id"
         ),
@@ -108,8 +113,8 @@ def load_archived_clients(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, contact, email, membership, "
-            "created_at, archived_at "
+            "SELECT client_id, name, contact, email, membership, is_pwd, "
+            "is_student, id_number, created_at, archived_at "
             "FROM clients WHERE archived_at IS NOT NULL ORDER BY id"
         )
         return [

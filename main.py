@@ -58,6 +58,16 @@ def prompt_required(label: str) -> str:
         print("This field is required.")
 
 
+def prompt_yes_no(label: str) -> bool:
+    while True:
+        answer = input(f"{label} (y/n): ").strip().lower()
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("Enter y or n.")
+
+
 def prompt_phone(
     label: str = "Contact number: ",
     *,
@@ -245,16 +255,30 @@ def add_client(
         "name": name,
         "contact": contact,
         "email": email,
-        "membership": prompt_required("Membership plan: "),
+        "membership": "",
+        "is_pwd": str(int(prompt_yes_no("Is the client a PWD?"))),
+        "is_student": str(int(prompt_yes_no("Is the client a Student?"))),
         "created_at": current_timestamp(),
         "archived_at": "",
     }
+    if record["is_pwd"] == "1" or record["is_student"] == "1":
+        record["id_number"] = prompt_required("PWD/Student ID number: ")
+    else:
+        record["id_number"] = ""
+
     print(
         "\nNew client details:\n"
         f"  Name: {record['name']}\n"
         f"  Contact: {record['contact']}\n"
         f"  Email: {record['email']}\n"
-        f"  Membership: {record['membership']}"
+        "  Membership: Not set\n"
+        f"  PWD: {'Yes' if record['is_pwd'] == '1' else 'No'}\n"
+        f"  Student: {'Yes' if record['is_student'] == '1' else 'No'}"
+        + (
+            f"\n  ID number: {record['id_number']}"
+            if record["id_number"]
+            else ""
+        )
     )
     confirmation = input("Are you sure you want to add this client? (y/N): ")
     if confirmation.strip().lower() != "y":

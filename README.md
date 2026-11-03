@@ -42,8 +42,10 @@ Archived clients are hidden from active client lists and attendance/payment
 selection, while their historical records remain in the database.
 
 New client profiles require an 11-digit phone number starting with `09` and a
-valid email address. Existing databases receive the email column automatically
-on startup.
+valid email address. During profile creation, GymPy asks whether the client is
+a PWD and/or a student, and requests an ID number if either answer is yes.
+Existing databases receive missing client profile columns automatically on
+startup.
 
 The main menu's **Attendance records** option displays logged attendance
 entries; **Log client attendance** remains a separate option for recording a

@@ -35,5 +35,15 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
                 "ALTER TABLE clients "
                 "ADD COLUMN email VARCHAR(254) NOT NULL DEFAULT ''"
             )
+        for column, definition in (
+            ("is_pwd", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("is_student", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("id_number", "VARCHAR(100) NOT NULL DEFAULT ''"),
+        ):
+            cursor.execute(f"SHOW COLUMNS FROM clients LIKE '{column}'")
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    f"ALTER TABLE clients ADD COLUMN {column} {definition}"
+                )
     finally:
         cursor.close()
