@@ -32,10 +32,23 @@ in `database/queries.py`, and table definitions are in
 `database/schema.sql`. GymPy creates the tables on startup and stores all
 records directly in MySQL.
 
+Application code is split by responsibility under `app/`: `main.py` starts the
+program, `menus.py` handles navigation, and `clients.py`, `attendance.py`,
+`payments.py`, and `maintenance.py` contain their respective workflows.
+Shared prompts, formatting, and service constants are in `common.py`;
+authentication is in `auth.py`.
+
 On the first startup, GymPy prompts you to enter and confirm a shared login
 password. It stores only a salted PBKDF2 hash in the `app_credentials` table
 and logs you in after setup. Run the program in a terminal so the hidden
 password prompts can receive input.
+
+Start GymPy from the project root using either command:
+
+```powershell
+python -m app.main
+python app\main.py
+```
 
 ## Brevo welcome emails
 
@@ -85,4 +98,4 @@ with its purchase and expiration times.
 
 The **Machine maintenance record** option displays a maintenance history table
 with record IDs and the date each machine was last serviced, then lets staff
-add a record or return to the main menu.
+add or edit a record, or return to the main menu.

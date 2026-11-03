@@ -201,6 +201,34 @@ def update_client(
         cursor.close()
 
 
+def update_maintenance_record(
+    connection: mysql.connector.MySQLConnection,
+    record_id: str,
+    machine: str,
+    description: str,
+    cost: str,
+) -> bool:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE maintenance SET machine = %s, description = %s, cost = %s "
+            "WHERE id = %s",
+            (machine, description, cost, record_id),
+        )
+        if cursor.rowcount == 0:
+            cursor.execute("SELECT 1 FROM maintenance WHERE id = %s", (record_id,))
+            if cursor.fetchone() is None:
+                connection.rollback()
+                return False
+        connection.commit()
+        return True
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
 def archive_client(
     connection: mysql.connector.MySQLConnection,
     client_id: str,
