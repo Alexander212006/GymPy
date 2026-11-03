@@ -57,4 +57,5 @@ the calculated amount and asks for confirmation before recording a payment.
 
 The main menu's **Attendance records** option displays logged attendance
 entries; **Log client attendance** remains a separate option for recording a
-new visit.
+new visit. **View active sessions** lists each client's current session along
+with its purchase and expiration times.

@@ -38,6 +38,7 @@ MENU_OPTIONS = (
     "Log client attendance",
     "Available services",
     "Payment history",
+    "View active sessions",
     "Machine maintenance record",
 )
 EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
@@ -806,6 +807,63 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
     print(separator)
 
 
+def show_active_sessions(data: dict[str, list[dict[str, str]]]) -> None:
+    now = datetime.now().astimezone()
+    rows = []
+    for client in data["clients"]:
+        try:
+            active_session = active_session_payment(
+                data["payments"],
+                client["client_id"],
+                now,
+            )
+        except ValueError as error:
+            print(
+                f"Could not check the session for {client['client_id']}: {error}"
+            )
+            return
+        if active_session is None:
+            continue
+
+        payment, expires_at = active_session
+        purchased_at = datetime.fromisoformat(payment["timestamp"])
+        if purchased_at.tzinfo is None:
+            purchased_at = purchased_at.astimezone()
+        rows.append(
+            (
+                client["client_id"],
+                client["name"],
+                payment["description"],
+                purchased_at.astimezone().strftime("%B %d, %Y %I:%M %p"),
+                expires_at.astimezone().strftime("%B %d, %Y %I:%M %p"),
+            )
+        )
+
+    print("\nACTIVE SESSIONS")
+    if not rows:
+        print("No active sessions.")
+        return
+
+    columns = ("Client ID", "Client Name", "Session", "Availed At", "Ends At")
+    widths = [
+        max(len(columns[index]), *(len(row[index]) for row in rows))
+        for index in range(len(columns))
+    ]
+
+    def format_row(values: tuple[str, ...]) -> str:
+        return "| " + " | ".join(
+            values[index].ljust(widths[index]) for index in range(len(values))
+        ) + " |"
+
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+    print(separator)
+    print(format_row(columns))
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+    print(separator)
+
+
 def record_maintenance(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
@@ -994,6 +1052,7 @@ def show_menu(
         lambda records: log_attendance(records, connection),
         lambda records: membership_payment_menu(records, connection),
         show_payment_history,
+        show_active_sessions,
         lambda records: record_maintenance(records, connection),
     )
     while True:
