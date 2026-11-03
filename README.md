@@ -14,17 +14,18 @@ Create the database in MySQL:
 CREATE DATABASE gympy;
 ```
 
-By default, GymPy connects to `localhost:3306` as `root` with an empty password
-and uses the `gympy` database. Set these environment variables to use different
-connection details (PowerShell example):
+GymPy reads its MySQL connection settings from the project `.env` file:
 
-```powershell
-$env:MYSQL_HOST = "localhost"
-$env:MYSQL_PORT = "3306"
-$env:MYSQL_USER = "root"
-$env:MYSQL_PASSWORD = "your-password"
-$env:MYSQL_DATABASE = "gympy"
+```dotenv
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DATABASE=gympy
 ```
+
+Edit these values in `.env` to match your local MySQL setup. The `.env` file
+is ignored by Git and should not be committed.
 
 The MySQL connection settings are in `database/connection.py`, SQL queries are
 in `database/queries.py`, and table definitions are in
@@ -35,6 +36,27 @@ On the first startup, GymPy prompts you to enter and confirm a shared login
 password. It stores only a salted PBKDF2 hash in the `app_credentials` table
 and logs you in after setup. Run the program in a terminal so the hidden
 password prompts can receive input.
+
+## Brevo welcome emails
+
+After a client profile is saved, GymPy sends a welcome email through Brevo's
+transactional email API. Open the `.env` file in the project folder and fill in
+the Brevo credentials:
+
+```dotenv
+BREVO_API_KEY=your-brevo-api-key
+BREVO_SENDER_EMAIL=verified-sender@example.com
+BREVO_SENDER_NAME=GymPy
+```
+
+Install dependencies with `python -m pip install -r requirements.txt` if
+needed. GymPy loads `.env` on startup, and `.env` is excluded from Git so the
+API key is not committed.
+
+Verify the sender address in Brevo before use. If email configuration or
+delivery fails, GymPy keeps the saved client profile and reports the email
+error. The email includes the client's name, client ID, and registered email;
+it never includes the stored student/PWD ID number.
 
 The **Client records** main-menu option opens a submenu to view and update
 active clients, archive a client, restore a client, and view archived profiles.

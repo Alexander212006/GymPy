@@ -2,10 +2,13 @@ import getpass
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 import mysql.connector
+from dotenv import load_dotenv
 
 from database.authentication import initialize_password, verify_password
+from database.brevo import send_client_welcome_email
 from database.connection import connect_database, initialize_database
 from database.queries import (
     archive_client,
@@ -17,6 +20,7 @@ from database.queries import (
     update_client,
 )
 
+load_dotenv(Path(__file__).with_name(".env"))
 
 MAX_ATTEMPTS = 3
 MEMBERSHIP_FEES = {"student_pwd": 200, "regular": 300}
@@ -333,7 +337,6 @@ def add_client(
         "\nNew client details:\n"
         f"  Name: {record['name']}\n"
         f"  Email: {record['email']}\n"
-        "  Membership: Not set\n"
         f"  PWD: {'Yes' if record['is_pwd'] == '1' else 'No'}\n"
         f"  Student: {'Yes' if record['is_student'] == '1' else 'No'}\n"
         f"  Worker: {'Yes' if record['is_worker'] == '1' else 'No'}"
@@ -350,6 +353,12 @@ def add_client(
 
     save_record(connection, data, "clients", record)
     print(f"Client profile saved. Client ID: {record['client_id']}")
+    try:
+        send_client_welcome_email(record)
+    except RuntimeError as error:
+        print(f"Welcome email could not be sent: {error}")
+    else:
+        print(f"Welcome email sent to {record['email']}.")
 
 
 def update_client_profile(

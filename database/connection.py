@@ -2,9 +2,11 @@ import os
 from pathlib import Path
 
 import mysql.connector
+from dotenv import load_dotenv
 
 
 SCHEMA_FILE = Path(__file__).with_name("schema.sql")
+load_dotenv(SCHEMA_FILE.parent.parent / ".env")
 
 
 def connect_database() -> mysql.connector.MySQLConnection:
