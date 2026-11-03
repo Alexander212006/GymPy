@@ -86,20 +86,6 @@ def prompt_yes_no(label: str, *, current: bool | None = None) -> bool:
         print("Enter y or n.")
 
 
-def prompt_phone(
-    label: str = "Contact number: ",
-    *,
-    current: str | None = None,
-) -> str:
-    while True:
-        suffix = input(f"{label}09").strip()
-        if current is not None and not suffix:
-            return current
-        if len(suffix) == 9 and suffix.isascii() and suffix.isdigit():
-            return f"09{suffix}"
-        print("Enter exactly 9 digits after the 09 prefix.")
-
-
 def prompt_email(label: str = "Email address: ") -> str:
     while True:
         email = input(label).strip()
@@ -212,10 +198,14 @@ def login(connection: mysql.connector.MySQLConnection) -> bool:
     return False
 
 
-def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
-    clients = [
-        client for client in data["clients"] if not client.get("archived_at")
-    ]
+def show_clients(
+    data: dict[str, list[dict[str, str]]],
+    clients: list[dict[str, str]] | None = None,
+) -> None:
+    if clients is None:
+        clients = [
+            client for client in data["clients"] if not client.get("archived_at")
+        ]
     print("\nCLIENT RECORDS")
     if not clients:
         print("No active client profiles found.")
@@ -224,7 +214,6 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
     columns = (
         "Client ID",
         "Name",
-        "Contact",
         "Email",
         "is_member",
         "Student",
@@ -236,7 +225,6 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
         (
             client["client_id"],
             client["name"],
-            client["contact"],
             client["email"],
             "Yes" if client_is_member(data["payments"], client["client_id"]) else "No",
             "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
@@ -266,7 +254,6 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
                 (
                     client["client_id"],
                     client["name"],
-                    client["contact"],
                     client["email"],
                     "Yes"
                     if client_is_member(data["payments"], client["client_id"])
@@ -281,6 +268,24 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
     print(separator)
 
 
+def search_client_profile(data: dict[str, list[dict[str, str]]]) -> None:
+    query = prompt_required("Search by client ID, name, or email: ").casefold()
+    matches = [
+        client
+        for client in data["clients"]
+        if not client.get("archived_at")
+        and any(
+            query in client.get(field, "").casefold()
+            for field in ("client_id", "name", "email")
+        )
+    ]
+    if not matches:
+        print("No active client profiles matched your search.")
+        return
+    print(f"\nFound {len(matches)} matching client profile(s).")
+    show_clients(data, matches)
+
+
 def add_client(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
@@ -289,23 +294,15 @@ def add_client(
 
     print("\nADD CLIENT PROFILE")
     name = prompt_required("Full name: ")
-    contact = prompt_phone()
     email = prompt_email()
 
-    normalized_name = " ".join(name.casefold().split())
     normalized_email = email.casefold()
     duplicate = next(
         (
             client
             for client in data["clients"]
             if not client.get("archived_at")
-            and (
-                (
-                    " ".join(client["name"].casefold().split()) == normalized_name
-                    and client["contact"] == contact
-                )
-                or client.get("email", "").casefold() == normalized_email
-            )
+            and client.get("email", "").casefold() == normalized_email
         ),
         None,
     )
@@ -319,7 +316,6 @@ def add_client(
     record = {
         "client_id": next_client_id(data["clients"]),
         "name": name,
-        "contact": contact,
         "email": email,
         "membership": "",
         "is_pwd": str(int(prompt_yes_no("Is the client a PWD?"))),
@@ -336,7 +332,6 @@ def add_client(
     print(
         "\nNew client details:\n"
         f"  Name: {record['name']}\n"
-        f"  Contact: {record['contact']}\n"
         f"  Email: {record['email']}\n"
         "  Membership: Not set\n"
         f"  PWD: {'Yes' if record['is_pwd'] == '1' else 'No'}\n"
@@ -369,10 +364,6 @@ def update_client_profile(
 
     print("Press Enter to keep the current value.")
     name = input(f"Full name [{client['name']}]: ").strip() or client["name"]
-    contact = prompt_phone(
-        "Contact number (Enter to keep): ",
-        current=client["contact"],
-    )
     email = input(f"Email address [{client.get('email', '')}] (Enter to keep): ").strip()
     if email:
         while not EMAIL_PATTERN.fullmatch(email):
@@ -392,7 +383,6 @@ def update_client_profile(
         )
     )
 
-    normalized_name = " ".join(name.casefold().split())
     normalized_email = email.casefold()
     duplicate = next(
         (
@@ -401,14 +391,8 @@ def update_client_profile(
             if existing["client_id"] != client["client_id"]
             and not existing.get("archived_at")
             and (
-                (
-                    " ".join(existing["name"].casefold().split()) == normalized_name
-                    and existing["contact"] == contact
-                )
-                or (
-                    normalized_email
-                    and existing.get("email", "").casefold() == normalized_email
-                )
+                normalized_email
+                and existing.get("email", "").casefold() == normalized_email
             )
         ),
         None,
@@ -423,7 +407,6 @@ def update_client_profile(
     print(
         "\nNew client details:\n"
         f"  Name: {name}\n"
-        f"  Contact: {contact}\n"
         f"  Email: {email}\n"
         f"  Membership: {membership}\n"
         f"  Worker: {'Yes' if is_worker == '1' else 'No'}"
@@ -439,18 +422,11 @@ def update_client_profile(
         connection,
         client["client_id"],
         name,
-        contact,
         email,
         membership,
         is_worker,
     ):
-        client.update(
-            name=name,
-            contact=contact,
-            email=email,
-            membership=membership,
-            is_worker=is_worker,
-        )
+        client.update(name=name, email=email, membership=membership, is_worker=is_worker)
         print(f"Client profile {client['client_id']} updated.")
     else:
         print("That client is no longer active.")
@@ -868,6 +844,58 @@ def record_maintenance(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
 ) -> None:
+    print("\nMACHINE MAINTENANCE HISTORY")
+    maintenance_records = data["maintenance"]
+    if not maintenance_records:
+        print("No maintenance records found.")
+    else:
+        columns = (
+            "ID",
+            "Last Serviced",
+            "Machine",
+            "Maintenance Performed",
+            "Cost (PHP)",
+        )
+        rows = [
+            (
+                record["id"],
+                format_created_at(record["timestamp"]),
+                record["machine"],
+                record["description"],
+                record["cost"],
+            )
+            for record in maintenance_records
+        ]
+        widths = [
+            max(len(columns[index]), *(len(row[index]) for row in rows))
+            for index in range(len(columns))
+        ]
+
+        def format_row(values: tuple[str, ...]) -> str:
+            return "| " + " | ".join(
+                values[index].ljust(widths[index])
+                for index in range(len(values))
+            ) + " |"
+
+        separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+        print(separator)
+        print(format_row(columns))
+        print(separator)
+        for row in rows:
+            print(format_row(row))
+        print(separator)
+
+    while True:
+        print("\nMAINTENANCE OPTIONS")
+        print("  1. Add maintenance record")
+        print("  2. Back to main menu")
+        choice = input("\nChoose an option: ").strip()
+        if choice == "2":
+            return
+        if choice == "1":
+            break
+        print("Invalid option. Choose 1 or 2.")
+
     print("\nMACHINE MAINTENANCE RECORD")
     record = {
         "machine": prompt_required("Machine or equipment name: "),
@@ -916,7 +944,6 @@ def display_archived_clients_table(
     columns = (
         "Client ID",
         "Name",
-        "Contact",
         "Email",
         "is_member",
         "Created At",
@@ -926,7 +953,6 @@ def display_archived_clients_table(
         (
             client["client_id"],
             client["name"],
-            client["contact"],
             client["email"],
             "Yes" if client_is_member(payments, client["client_id"]) else "No",
             format_created_at(client["created_at"]),
@@ -1010,12 +1036,14 @@ def client_records_menu(
     connection: mysql.connector.MySQLConnection,
 ) -> None:
     actions = (
+        lambda: search_client_profile(data),
         lambda: update_client_profile(data, connection),
         lambda: delete_client_record(data, connection),
         lambda: restore_archived_client(data, connection),
         lambda: show_archived_clients(data, connection),
     )
     options = (
+        "Search client profile",
         "Update client profile",
         "Delete client profile",
         "Restore archived client",

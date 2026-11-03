@@ -11,14 +11,13 @@ def _insert_record(
     if collection == "clients":
         statement = (
             "INSERT INTO clients "
-            "(client_id, name, contact, email, membership, is_pwd, "
+            "(client_id, name, email, membership, is_pwd, "
             "is_student, is_worker, id_number, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         values = (
             record["client_id"],
             record["name"],
-            record["contact"],
             record["email"],
             record["membership"],
             record["is_pwd"],
@@ -67,7 +66,7 @@ def load_data(
 ) -> dict[str, list[dict[str, str]]]:
     queries = {
         "clients": (
-            "SELECT client_id, name, contact, email, membership, is_pwd, "
+            "SELECT client_id, name, email, membership, is_pwd, "
             "is_student, is_worker, id_number, created_at, "
             "COALESCE(archived_at, '') AS archived_at "
             "FROM clients ORDER BY id"
@@ -84,7 +83,7 @@ def load_data(
             "FROM payments ORDER BY id"
         ),
         "maintenance": (
-            "SELECT machine, description, cost, timestamp "
+            "SELECT id, machine, description, cost, timestamp "
             "FROM maintenance ORDER BY id"
         ),
     }
@@ -114,7 +113,7 @@ def load_archived_clients(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, contact, email, membership, is_pwd, "
+            "SELECT client_id, name, email, membership, is_pwd, "
             "is_student, is_worker, id_number, created_at, archived_at "
             "FROM clients WHERE archived_at IS NOT NULL ORDER BY id"
         )
@@ -157,6 +156,8 @@ def save_record(
     cursor = connection.cursor()
     try:
         _insert_record(cursor, collection, record)
+        if collection == "maintenance":
+            record["id"] = str(cursor.lastrowid)
         connection.commit()
     except mysql.connector.Error:
         connection.rollback()
@@ -170,7 +171,6 @@ def update_client(
     connection: mysql.connector.MySQLConnection,
     client_id: str,
     name: str,
-    contact: str,
     email: str,
     membership: str,
     is_worker: str,
@@ -178,10 +178,10 @@ def update_client(
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "UPDATE clients SET name = %s, contact = %s, email = %s, "
+            "UPDATE clients SET name = %s, email = %s, "
             "membership = %s, is_worker = %s "
             "WHERE client_id = %s AND archived_at IS NULL",
-            (name, contact, email, membership, is_worker, client_id),
+            (name, email, membership, is_worker, client_id),
         )
         if cursor.rowcount == 0:
             cursor.execute(
