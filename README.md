@@ -50,6 +50,54 @@ python -m app.main
 python app\main.py
 ```
 
+## HTTP API
+
+GymPy also provides a REST API for client, attendance, payment, and
+maintenance records. Install the dependencies above and create the MySQL
+database. Start the API from the project root:
+
+```powershell
+python -m uvicorn API.main:app --host 127.0.0.1 --port 8000
+```
+
+The API does not require authentication. Anyone who can reach the server can
+read, create, update, archive, restore, or delete records. Keep it bound to
+localhost for local development; do not expose it to an untrusted network.
+Interactive API documentation is available at
+`http://127.0.0.1:8000/docs`.
+
+Each resource supports `GET` on its collection and item, `POST` to create,
+`PUT` to replace an item, and `DELETE` to delete it. Resources and item
+identifiers are:
+
+| Resource | Collection | Item identifier |
+| --- | --- | --- |
+| Clients | `/api/clients` | Client ID, e.g. `C0001` |
+| Attendance | `/api/attendance` | Attendance record ID |
+| Payments | `/api/payments` | Payment record ID |
+| Maintenance | `/api/maintenance` | Maintenance record ID |
+
+For example, create a client and list active clients in PowerShell:
+
+```powershell
+curl.exe -u gympy:YOUR_GYMPY_PASSWORD `
+  -H "Content-Type: application/json" `
+  -d '{"name":"Alex Lee","email":"alex@example.com","is_student":true}' `
+  http://127.0.0.1:8000/api/clients
+
+curl.exe -u gympy:YOUR_GYMPY_PASSWORD http://127.0.0.1:8000/api/clients
+```
+
+`PUT` requests require the complete writable record body. `POST` returns the
+created record with HTTP 201, successful `DELETE` returns HTTP 204, invalid
+input returns HTTP 422, and missing records return HTTP 404. Deleting a client
+archives it to preserve attendance and payment history; archived clients can
+be listed using `GET /api/clients?include_archived=true` and restored with
+`POST /api/clients/{client_id}/restore`. Attendance can only be recorded for
+active clients, and the API enforces the one-attendance-per-client-per-day rule.
+API responses include record IDs for attendance, payments, and maintenance;
+amounts and costs are returned as decimal strings.
+
 ## Brevo welcome emails
 
 After a client profile is saved, GymPy sends a welcome email through Brevo's
