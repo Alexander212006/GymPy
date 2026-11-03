@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS clients (
     membership VARCHAR(100) NOT NULL,
     is_pwd BOOLEAN NOT NULL DEFAULT FALSE,
     is_student BOOLEAN NOT NULL DEFAULT FALSE,
+    is_worker BOOLEAN NOT NULL DEFAULT FALSE,
     id_number VARCHAR(100) NOT NULL DEFAULT '',
     created_at VARCHAR(40) NOT NULL,
     archived_at VARCHAR(40) NULL

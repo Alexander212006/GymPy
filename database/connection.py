@@ -38,6 +38,7 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
         for column, definition in (
             ("is_pwd", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("is_student", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("is_worker", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("id_number", "VARCHAR(100) NOT NULL DEFAULT ''"),
         ):
             cursor.execute(f"SHOW COLUMNS FROM clients LIKE '{column}'")

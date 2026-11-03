@@ -43,9 +43,17 @@ selection, while their historical records remain in the database.
 
 New client profiles require an 11-digit phone number starting with `09` and a
 valid email address. During profile creation, GymPy asks whether the client is
-a PWD and/or a student, and requests an ID number if either answer is yes.
+a PWD, a student, or a worker, and requests an ID number if the client is a
+PWD or student.
 Existing databases receive missing client profile columns automatically on
 startup.
+
+Service payments use the rates displayed in the services menu. Member rates
+apply after a Gym membership payment has been recorded; each client can
+purchase Gym membership only once. Full month, half month, and daily sessions
+remain valid for 30, 15, and 1 day respectively. Clients cannot purchase any
+additional service while one of these sessions is still valid. GymPy displays
+the calculated amount and asks for confirmation before recording a payment.
 
 The main menu's **Attendance records** option displays logged attendance
 entries; **Log client attendance** remains a separate option for recording a

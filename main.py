@@ -1,6 +1,6 @@
 import getpass
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import mysql.connector
@@ -19,12 +19,24 @@ from database.queries import (
 
 
 MAX_ATTEMPTS = 3
+MEMBERSHIP_FEES = {"student_pwd": 200, "regular": 300}
+SESSION_FEES = {
+    "student_pwd": {"Full month session": 350, "Half month session": 600, "Daily session": 50},
+    "regular": {"Full month session": 400, "Half month session": 750, "Daily session": 60},
+    "non_member_student": {"Daily session": 60},
+    "non_member_worker": {"Daily session": 80},
+}
+SESSION_VALIDITY = {
+    "Full month session": timedelta(days=30),
+    "Half month session": timedelta(days=15),
+    "Daily session": timedelta(days=1),
+}
 MENU_OPTIONS = (
     "Client records",
     "Add client profile",
     "Attendance records",
     "Log client attendance",
-    "Client payment",
+    "Available services",
     "Payment history",
     "Machine maintenance record",
 )
@@ -58,9 +70,14 @@ def prompt_required(label: str) -> str:
         print("This field is required.")
 
 
-def prompt_yes_no(label: str) -> bool:
+def prompt_yes_no(label: str, *, current: bool | None = None) -> bool:
+    prompt = f"{label} (y/n): "
+    if current is not None:
+        prompt = f"{label} [{'Y' if current else 'N'}] (Enter to keep): "
     while True:
-        answer = input(f"{label} (y/n): ").strip().lower()
+        answer = input(prompt).strip().lower()
+        if not answer and current is not None:
+            return current
         if answer in {"y", "yes"}:
             return True
         if answer in {"n", "no"}:
@@ -135,6 +152,36 @@ def select_client(data: dict[str, list[dict[str, str]]]) -> dict[str, str] | Non
     return None
 
 
+def client_is_member(
+    payments: list[dict[str, str]],
+    client_id: str,
+) -> bool:
+    return any(
+        payment["client_id"] == client_id
+        and payment["description"].casefold() == "gym membership"
+        for payment in payments
+    )
+
+
+def active_session_payment(
+    payments: list[dict[str, str]],
+    client_id: str,
+    now: datetime,
+) -> tuple[dict[str, str], datetime] | None:
+    for payment in reversed(payments):
+        validity = SESSION_VALIDITY.get(payment["description"])
+        if payment["client_id"] != client_id or validity is None:
+            continue
+
+        purchased_at = datetime.fromisoformat(payment["timestamp"])
+        if purchased_at.tzinfo is None:
+            purchased_at = purchased_at.astimezone()
+        expires_at = purchased_at + validity
+        if now < expires_at:
+            return payment, expires_at
+    return None
+
+
 def show_welcome() -> None:
     print("=" * 42)
     print("          G Y M P Y   M A N A G E R")
@@ -173,14 +220,27 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
         print("No active client profiles found.")
         return
 
-    columns = ("Client ID", "Name", "Contact", "Email", "Membership", "Created At")
+    columns = (
+        "Client ID",
+        "Name",
+        "Contact",
+        "Email",
+        "is_member",
+        "Student",
+        "PWD",
+        "Worker",
+        "Created At",
+    )
     rows = [
         (
             client["client_id"],
             client["name"],
             client["contact"],
             client["email"],
-            client["membership"],
+            "Yes" if client_is_member(data["payments"], client["client_id"]) else "No",
+            "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
+            "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
+            "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
             format_created_at(client["created_at"]),
         )
         for client in clients
@@ -207,7 +267,12 @@ def show_clients(data: dict[str, list[dict[str, str]]]) -> None:
                     client["name"],
                     client["contact"],
                     client["email"],
-                    client["membership"],
+                    "Yes"
+                    if client_is_member(data["payments"], client["client_id"])
+                    else "No",
+                    "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
+                    "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
+                    "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
                     format_created_at(client["created_at"]),
                 )
             )
@@ -258,6 +323,7 @@ def add_client(
         "membership": "",
         "is_pwd": str(int(prompt_yes_no("Is the client a PWD?"))),
         "is_student": str(int(prompt_yes_no("Is the client a Student?"))),
+        "is_worker": str(int(prompt_yes_no("Is the client a Worker?"))),
         "created_at": current_timestamp(),
         "archived_at": "",
     }
@@ -273,7 +339,8 @@ def add_client(
         f"  Email: {record['email']}\n"
         "  Membership: Not set\n"
         f"  PWD: {'Yes' if record['is_pwd'] == '1' else 'No'}\n"
-        f"  Student: {'Yes' if record['is_student'] == '1' else 'No'}"
+        f"  Student: {'Yes' if record['is_student'] == '1' else 'No'}\n"
+        f"  Worker: {'Yes' if record['is_worker'] == '1' else 'No'}"
         + (
             f"\n  ID number: {record['id_number']}"
             if record["id_number"]
@@ -315,6 +382,14 @@ def update_client_profile(
     membership = input(
         f"Membership plan [{client['membership']}]: "
     ).strip() or client["membership"]
+    is_worker = str(
+        int(
+            prompt_yes_no(
+                "Is the client a Worker?",
+                current=client.get("is_worker", "0").lower() in {"1", "true"},
+            )
+        )
+    )
 
     normalized_name = " ".join(name.casefold().split())
     normalized_email = email.casefold()
@@ -349,7 +424,8 @@ def update_client_profile(
         f"  Name: {name}\n"
         f"  Contact: {contact}\n"
         f"  Email: {email}\n"
-        f"  Membership: {membership}"
+        f"  Membership: {membership}\n"
+        f"  Worker: {'Yes' if is_worker == '1' else 'No'}"
     )
     confirmation = input(
         f"Are you sure you want to update client {client['client_id']}? (y/N): "
@@ -365,8 +441,15 @@ def update_client_profile(
         contact,
         email,
         membership,
+        is_worker,
     ):
-        client.update(name=name, contact=contact, email=email, membership=membership)
+        client.update(
+            name=name,
+            contact=contact,
+            email=email,
+            membership=membership,
+            is_worker=is_worker,
+        )
         print(f"Client profile {client['client_id']} updated.")
     else:
         print("That client is no longer active.")
@@ -442,21 +525,241 @@ def show_attendance_records(data: dict[str, list[dict[str, str]]]) -> None:
 def record_payment(
     data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
+    description: str,
 ) -> None:
-    print("\nCLIENT PAYMENT")
+    print(f"\n{description.upper()}")
+    clients = [
+        client for client in data["clients"] if not client.get("archived_at")
+    ]
+    if not clients:
+        print("There are no active client profiles. Add a client profile first.")
+        return
+
+    columns = (
+        "Client ID",
+        "Full Name",
+        "is_member",
+        "Student",
+        "PWD",
+        "Worker",
+        "ID Number",
+    )
+    rows = [
+        (
+            client["client_id"],
+            client["name"],
+            "Yes" if client_is_member(data["payments"], client["client_id"]) else "No",
+            "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
+            "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
+            "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
+            client.get("id_number", ""),
+        )
+        for client in clients
+    ]
+    widths = [
+        max(len(columns[index]), *(len(row[index]) for row in rows))
+        for index in range(len(columns))
+    ]
+
+    def format_row(values: tuple[str, ...]) -> str:
+        return "| " + " | ".join(
+            values[index].ljust(widths[index]) for index in range(len(values))
+        ) + " |"
+
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+    print(separator)
+    print(format_row(columns))
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+    print(separator)
+
     client = select_client(data)
     if client is None:
+        return
+
+    now = datetime.now().astimezone()
+    try:
+        active_session = active_session_payment(
+            data["payments"],
+            client["client_id"],
+            now,
+        )
+    except ValueError as error:
+        print(f"Could not verify this client's service validity: {error}")
+        return
+    if active_session is not None:
+        active_payment, expires_at = active_session
+        print(
+            f"{client['name']} already has an active "
+            f"{active_payment['description']} until "
+            f"{expires_at.strftime('%Y-%m-%d %I:%M %p %Z')}. "
+            "No additional service can be purchased until it expires."
+        )
+        return
+
+    is_student = client.get("is_student", "").lower() in {"1", "true"}
+    is_pwd = client.get("is_pwd", "").lower() in {"1", "true"}
+    is_worker = client.get("is_worker", "").lower() in {"1", "true"}
+    is_member = client_is_member(data["payments"], client["client_id"])
+
+    if description == "Gym membership":
+        if is_member:
+            print("This client has already purchased a gym membership.")
+            return
+        category = "student_pwd" if is_student or is_pwd else "regular"
+        amount = MEMBERSHIP_FEES[category]
+        discount_amount = MEMBERSHIP_FEES["regular"] - amount
+    elif is_member:
+        category = "student_pwd" if is_student or is_pwd else "regular"
+        amount = SESSION_FEES[category].get(description)
+        regular_amount = SESSION_FEES["regular"].get(description)
+        discount_amount = (
+            regular_amount - amount
+            if regular_amount is not None and amount is not None
+            else 0
+        )
+    elif description == "Daily session" and is_student:
+        amount = SESSION_FEES["non_member_student"][description]
+        discount_amount = 0
+    elif description == "Daily session" and is_worker:
+        amount = SESSION_FEES["non_member_worker"][description]
+        discount_amount = 0
+    else:
+        amount = None
+        discount_amount = 0
+
+    if amount is None:
+        print(
+            "This client is not eligible for that service. "
+            "A gym membership is required for full or half month sessions; "
+            "non-members may only purchase daily sessions if they are a "
+            "student or worker."
+        )
         return
 
     record = {
         "client_id": client["client_id"],
         "client_name": client["name"],
-        "amount": prompt_amount("Payment amount: "),
-        "description": prompt_required("Payment description: "),
+        "amount": f"{amount:.2f}",
+        "description": description,
         "timestamp": current_timestamp(),
     }
+    if is_pwd and is_student:
+        discount = "PWD and Student"
+    elif is_pwd:
+        discount = "PWD"
+    elif is_student:
+        discount = "Student"
+    else:
+        discount = "None (regular rate)"
+
+    print(
+        f"\nPayment summary:\n"
+        f"  Client: {client['name']} ({client['client_id']})\n"
+        f"  Service: {description}\n"
+        f"  Discount: {discount} (PHP {discount_amount:.2f})\n"
+        f"  Amount due: PHP {record['amount']}"
+    )
+    confirmation = input("Confirm payment? (y/N): ").strip().lower()
+    if confirmation not in {"y", "yes"}:
+        print("Payment cancelled.")
+        return
+
     save_record(connection, data, "payments", record)
     print(f"Payment of {record['amount']} recorded for {client['name']}.")
+
+
+def membership_payment_menu(
+    data: dict[str, list[dict[str, str]]],
+    connection: mysql.connector.MySQLConnection,
+) -> None:
+    def print_rate_table(
+        title: str,
+        columns: tuple[str, ...],
+        rows: tuple[tuple[str, ...], ...],
+    ) -> None:
+        widths = [
+            max(len(columns[index]), *(len(row[index]) for row in rows))
+            for index in range(len(columns))
+        ]
+
+        def format_row(values: tuple[str, ...]) -> str:
+            return "| " + " | ".join(
+                values[index].ljust(widths[index])
+                for index in range(len(values))
+            ) + " |"
+
+        separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+        print(f"\n{title} (pesos)")
+        print(separator)
+        print(format_row(columns))
+        print(separator)
+        for row in rows:
+            print(format_row(row))
+        print(separator)
+
+    membership_columns = ("Client category", "Membership fee")
+    membership_rows = (
+        ("Student/PWD", str(MEMBERSHIP_FEES["student_pwd"])),
+        ("Regular customer", str(MEMBERSHIP_FEES["regular"])),
+    )
+    rate_columns = (
+        "Client category",
+        "Full month",
+        "Half month",
+        "Daily session",
+    )
+    rate_rows = (
+        (
+            "Student/PWD member",
+            str(SESSION_FEES["student_pwd"]["Full month session"]),
+            str(SESSION_FEES["student_pwd"]["Half month session"]),
+            str(SESSION_FEES["student_pwd"]["Daily session"]),
+        ),
+        (
+            "Regular member",
+            str(SESSION_FEES["regular"]["Full month session"]),
+            str(SESSION_FEES["regular"]["Half month session"]),
+            str(SESSION_FEES["regular"]["Daily session"]),
+        ),
+        (
+            "Non-member (student)",
+            "N/A",
+            "N/A",
+            str(SESSION_FEES["non_member_student"]["Daily session"]),
+        ),
+        (
+            "Non-member (worker)",
+            "N/A",
+            "N/A",
+            str(SESSION_FEES["non_member_worker"]["Daily session"]),
+        ),
+    )
+
+    options = (
+        "Gym membership",
+        "Full month session",
+        "Half month session",
+        "Daily session",
+    )
+    while True:
+        print_rate_table("MEMBERSHIP FEES", membership_columns, membership_rows)
+        print_rate_table("SERVICE RATES", rate_columns, rate_rows)
+        print("\nAvailable Services")
+        for number, option in enumerate(options, start=1):
+            print(f"  {number}. {option}")
+        print(f"  {len(options) + 1}. Back to main menu")
+
+        choice = input("\nChoose an option: ").strip()
+        if choice == str(len(options) + 1):
+            return
+        if not choice.isdigit() or not 1 <= int(choice) <= len(options):
+            print(f"Invalid option. Choose a number from 1 to {len(options) + 1}.")
+            continue
+
+        record_payment(data, connection, options[int(choice) - 1])
+        return
 
 
 def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
@@ -466,12 +769,41 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
         print("No payments recorded.")
         return
 
-    for payment in payments:
-        print(
-            f"{payment['timestamp']} | {payment['client_id']} - "
-            f"{payment['client_name']} | {payment['amount']} | "
-            f"{payment['description']}"
+    columns = (
+        "Date",
+        "Time",
+        "Client ID",
+        "Client Name",
+        "Amount (PHP)",
+        "Description",
+    )
+    rows = [
+        (
+            *format_attendance_datetime(payment["timestamp"]),
+            payment["client_id"],
+            payment["client_name"],
+            payment["amount"],
+            payment["description"],
         )
+        for payment in payments
+    ]
+    widths = [
+        max(len(columns[index]), *(len(row[index]) for row in rows))
+        for index in range(len(columns))
+    ]
+
+    def format_row(values: tuple[str, ...]) -> str:
+        return "| " + " | ".join(
+            values[index].ljust(widths[index]) for index in range(len(values))
+        ) + " |"
+
+    separator = "+-" + "-+-".join("-" * width for width in widths) + "-+"
+    print(separator)
+    print(format_row(columns))
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+    print(separator)
 
 
 def record_maintenance(
@@ -516,6 +848,7 @@ def delete_client_record(
 
 def display_archived_clients_table(
     archived_clients: list[dict[str, str]],
+    payments: list[dict[str, str]],
 ) -> None:
     print("\nARCHIVED CLIENTS")
     if not archived_clients:
@@ -527,7 +860,7 @@ def display_archived_clients_table(
         "Name",
         "Contact",
         "Email",
-        "Membership",
+        "is_member",
         "Created At",
         "Archived At",
     )
@@ -537,7 +870,7 @@ def display_archived_clients_table(
             client["name"],
             client["contact"],
             client["email"],
-            client["membership"],
+            "Yes" if client_is_member(payments, client["client_id"]) else "No",
             format_created_at(client["created_at"]),
             format_created_at(client["archived_at"]),
         )
@@ -563,10 +896,11 @@ def display_archived_clients_table(
 
 
 def show_archived_clients(
+    data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
 ) -> None:
     archived_clients = load_archived_clients(connection)
-    display_archived_clients_table(archived_clients)
+    display_archived_clients_table(archived_clients, data["payments"])
 
     input("\nPress Enter to return to the Client Records menu...")
 
@@ -581,7 +915,7 @@ def restore_archived_client(
         print("There are no archived clients to restore.")
         return
 
-    display_archived_clients_table(archived_clients)
+    display_archived_clients_table(archived_clients, data["payments"])
 
     client_id = prompt_required("Enter client ID to restore: ").upper()
     client = next(
@@ -621,7 +955,7 @@ def client_records_menu(
         lambda: update_client_profile(data, connection),
         lambda: delete_client_record(data, connection),
         lambda: restore_archived_client(data, connection),
-        lambda: show_archived_clients(connection),
+        lambda: show_archived_clients(data, connection),
     )
     options = (
         "Update client profile",
@@ -658,7 +992,7 @@ def show_menu(
         lambda records: add_client(records, connection),
         show_attendance_records,
         lambda records: log_attendance(records, connection),
-        lambda records: record_payment(records, connection),
+        lambda records: membership_payment_menu(records, connection),
         show_payment_history,
         lambda records: record_maintenance(records, connection),
     )

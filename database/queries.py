@@ -12,8 +12,8 @@ def _insert_record(
         statement = (
             "INSERT INTO clients "
             "(client_id, name, contact, email, membership, is_pwd, "
-            "is_student, id_number, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "is_student, is_worker, id_number, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         values = (
             record["client_id"],
@@ -23,6 +23,7 @@ def _insert_record(
             record["membership"],
             record["is_pwd"],
             record["is_student"],
+            record["is_worker"],
             record["id_number"],
             record["created_at"],
         )
@@ -67,7 +68,7 @@ def load_data(
     queries = {
         "clients": (
             "SELECT client_id, name, contact, email, membership, is_pwd, "
-            "is_student, id_number, created_at, "
+            "is_student, is_worker, id_number, created_at, "
             "COALESCE(archived_at, '') AS archived_at "
             "FROM clients ORDER BY id"
         ),
@@ -114,7 +115,7 @@ def load_archived_clients(
     try:
         cursor.execute(
             "SELECT client_id, name, contact, email, membership, is_pwd, "
-            "is_student, id_number, created_at, archived_at "
+            "is_student, is_worker, id_number, created_at, archived_at "
             "FROM clients WHERE archived_at IS NOT NULL ORDER BY id"
         )
         return [
@@ -172,14 +173,15 @@ def update_client(
     contact: str,
     email: str,
     membership: str,
+    is_worker: str,
 ) -> bool:
     cursor = connection.cursor()
     try:
         cursor.execute(
             "UPDATE clients SET name = %s, contact = %s, email = %s, "
-            "membership = %s "
+            "membership = %s, is_worker = %s "
             "WHERE client_id = %s AND archived_at IS NULL",
-            (name, contact, email, membership, client_id),
+            (name, contact, email, membership, is_worker, client_id),
         )
         if cursor.rowcount == 0:
             cursor.execute(
