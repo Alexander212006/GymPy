@@ -11,7 +11,7 @@ def _insert_record(
     if collection == "clients":
         statement = (
             "INSERT INTO clients "
-            "(client_id, name, email, membership, is_pwd, "
+            "(client_id, name, email, is_member, is_pwd, "
             "is_student, is_worker, valid_id_number, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
@@ -19,7 +19,7 @@ def _insert_record(
             record["client_id"],
             record["name"],
             record["email"],
-            record["membership"],
+            record["is_member"],
             record["is_pwd"],
             record["is_student"],
             record["is_worker"],
@@ -66,7 +66,7 @@ def load_data(
 ) -> dict[str, list[dict[str, str]]]:
     queries = {
         "clients": (
-            "SELECT client_id, name, email, membership, is_pwd, "
+            "SELECT client_id, name, email, is_member, is_pwd, "
             "is_student, is_worker, valid_id_number, created_at, "
             "COALESCE(archived_at, '') AS archived_at "
             "FROM clients ORDER BY id"
@@ -113,7 +113,7 @@ def load_archived_clients(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, email, membership, is_pwd, "
+            "SELECT client_id, name, email, is_member, is_pwd, "
             "is_student, is_worker, valid_id_number, created_at, archived_at "
             "FROM clients WHERE archived_at IS NOT NULL ORDER BY id"
         )
@@ -156,6 +156,14 @@ def save_record(
     cursor = connection.cursor()
     try:
         _insert_record(cursor, collection, record)
+        if (
+            collection == "payments"
+            and record["description"].casefold() == "gym membership"
+        ):
+            cursor.execute(
+                "UPDATE clients SET is_member = TRUE WHERE client_id = %s",
+                (record["client_id"],),
+            )
         if collection == "maintenance":
             record["id"] = str(cursor.lastrowid)
         connection.commit()
@@ -165,6 +173,14 @@ def save_record(
     finally:
         cursor.close()
     data[collection].append(record)
+    if (
+        collection == "payments"
+        and record["description"].casefold() == "gym membership"
+    ):
+        for client in data["clients"]:
+            if client["client_id"] == record["client_id"]:
+                client["is_member"] = "1"
+                break
 
 
 def update_client(
@@ -172,7 +188,6 @@ def update_client(
     client_id: str,
     name: str,
     email: str,
-    membership: str,
     is_pwd: str,
     is_student: str,
     is_worker: str,
@@ -181,14 +196,13 @@ def update_client(
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "UPDATE clients SET name = %s, email = %s, membership = %s, "
+            "UPDATE clients SET name = %s, email = %s, "
             "is_pwd = %s, is_student = %s, is_worker = %s, "
             "valid_id_number = %s "
             "WHERE client_id = %s AND archived_at IS NULL",
             (
                 name,
                 email,
-                membership,
                 is_pwd,
                 is_student,
                 is_worker,

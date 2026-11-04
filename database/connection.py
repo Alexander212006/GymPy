@@ -70,5 +70,24 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
                 "ALTER TABLE clients ADD COLUMN valid_id_number "
                 "VARCHAR(100) NOT NULL DEFAULT ''"
             )
+        cursor.execute("SHOW COLUMNS FROM clients LIKE 'membership'")
+        has_membership = cursor.fetchone() is not None
+        cursor.execute("SHOW COLUMNS FROM clients LIKE 'is_member'")
+        has_is_member = cursor.fetchone() is not None
+        if not has_is_member:
+            cursor.execute(
+                "ALTER TABLE clients ADD COLUMN is_member "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        if has_membership:
+            cursor.execute(
+                "ALTER TABLE clients DROP COLUMN membership"
+            )
+        cursor.execute(
+            "UPDATE clients SET is_member = EXISTS ("
+            "SELECT 1 FROM payments "
+            "WHERE payments.client_id = clients.client_id "
+            "AND LOWER(payments.description) = 'gym membership')"
+        )
     finally:
         cursor.close()

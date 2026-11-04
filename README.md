@@ -96,7 +96,8 @@ be listed using `GET /api/clients?include_archived=true` and restored with
 `POST /api/clients/{client_id}/restore`. Attendance can only be recorded for
 active clients, and the API enforces the one-attendance-per-client-per-day rule.
 API responses include record IDs for attendance, payments, and maintenance;
-amounts and costs are returned as decimal strings.
+amounts and costs are returned as decimal strings. Client responses include
+`is_member` as a Boolean, updated from Gym Membership payment records.
 
 ## Brevo welcome emails
 
@@ -125,14 +126,15 @@ Archived clients are hidden from active client lists and attendance/payment
 selection, while their historical records remain in the database.
 
 New client profiles require a valid email address. During profile creation,
-GymPy asks whether the client is a PWD, a student, or a worker, and requests an
+GymPy asks whether the client is a PWD, a student, or a worker, and requests a
 valid ID number if the client is a PWD or student. The valid ID number is
 stored on the client profile, shown in active and archived client tables, and
 required for PWD/student clients submitted through the API. Client records can
 be searched by ID, name, or email from the Client Records menu.
 Existing databases receive missing client profile columns automatically on
-startup; the migration permanently deletes the old client contact column and
-its stored values.
+startup. The migration replaces the old client `membership` text column with
+the `is_member` Boolean, setting it from Gym Membership payment history, and
+permanently deletes the old client contact column and its stored values.
 
 Service payments use the rates displayed in the services menu. Member rates
 apply after a Gym membership payment has been recorded; each client can

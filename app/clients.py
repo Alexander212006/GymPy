@@ -11,7 +11,6 @@ from database.queries import (
 
 from .common import (
     EMAIL_PATTERN,
-    client_is_member,
     current_timestamp,
     format_created_at,
     next_client_id,
@@ -38,7 +37,7 @@ def show_clients(
         "Client ID",
         "Name",
         "Email",
-        "is_member",
+        "Membership",
         "Student",
         "PWD",
         "Worker",
@@ -50,7 +49,7 @@ def show_clients(
             client["client_id"],
             client["name"],
             client["email"],
-            "Yes" if client_is_member(data["payments"], client["client_id"]) else "No",
+            "Yes" if client.get("is_member", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
@@ -81,7 +80,7 @@ def show_clients(
                     client["name"],
                     client["email"],
                     "Yes"
-                    if client_is_member(data["payments"], client["client_id"])
+                    if client.get("is_member", "").lower() in {"1", "true"}
                     else "No",
                     "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
                     "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
@@ -141,7 +140,7 @@ def add_client(
         "client_id": next_client_id(data["clients"]),
         "name": name,
         "email": email,
-        "membership": "",
+        "is_member": "0",
         "is_pwd": str(int(prompt_yes_no("Is the client a PWD?"))),
         "is_student": str(int(prompt_yes_no("Is the client a Student?"))),
         "is_worker": str(int(prompt_yes_no("Is the client a Worker?"))),
@@ -201,9 +200,6 @@ def update_client_profile(
             email = input("Email address: ").strip()
     else:
         email = client.get("email", "")
-    membership = input(
-        f"Membership plan [{client['membership']}]: "
-    ).strip() or client["membership"]
     is_pwd = str(
         int(
             prompt_yes_no(
@@ -270,7 +266,8 @@ def update_client_profile(
         "\nNew client details:\n"
         f"  Name: {name}\n"
         f"  Email: {email}\n"
-        f"  Membership: {membership}\n"
+        f"  Membership: "
+        f"{'Yes' if client.get('is_member', '').lower() in {'1', 'true'} else 'No'}\n"
         f"  PWD: {'Yes' if is_pwd == '1' else 'No'}\n"
         f"  Student: {'Yes' if is_student == '1' else 'No'}\n"
         f"  Valid ID number: {valid_id_number}\n"
@@ -288,7 +285,6 @@ def update_client_profile(
         client["client_id"],
         name,
         email,
-        membership,
         is_pwd,
         is_student,
         is_worker,
@@ -297,7 +293,6 @@ def update_client_profile(
         client.update(
             name=name,
             email=email,
-            membership=membership,
             is_pwd=is_pwd,
             is_student=is_student,
             is_worker=is_worker,
@@ -333,7 +328,6 @@ def delete_client_record(
 
 def display_archived_clients_table(
     archived_clients: list[dict[str, str]],
-    payments: list[dict[str, str]],
 ) -> None:
     print("\nARCHIVED CLIENTS")
     if not archived_clients:
@@ -345,7 +339,7 @@ def display_archived_clients_table(
         "Name",
         "Email",
         "Valid ID Number",
-        "is_member",
+        "Membership",
         "Created At",
         "Archived At",
     )
@@ -355,7 +349,7 @@ def display_archived_clients_table(
             client["name"],
             client["email"],
             client.get("valid_id_number", ""),
-            "Yes" if client_is_member(payments, client["client_id"]) else "No",
+            "Yes" if client.get("is_member", "").lower() in {"1", "true"} else "No",
             format_created_at(client["created_at"]),
             format_created_at(client["archived_at"]),
         )
@@ -380,11 +374,10 @@ def display_archived_clients_table(
     print(separator)
 
 def show_archived_clients(
-    data: dict[str, list[dict[str, str]]],
     connection: mysql.connector.MySQLConnection,
 ) -> None:
     archived_clients = load_archived_clients(connection)
-    display_archived_clients_table(archived_clients, data["payments"])
+    display_archived_clients_table(archived_clients)
 
     input("\nPress Enter to return to the Client Records menu...")
 
@@ -398,7 +391,7 @@ def restore_archived_client(
         print("There are no archived clients to restore.")
         return
 
-    display_archived_clients_table(archived_clients, data["payments"])
+    display_archived_clients_table(archived_clients)
 
     client_id = prompt_required("Enter client ID to restore: ").upper()
     client = next(
@@ -438,7 +431,7 @@ def client_records_menu(
         lambda: update_client_profile(data, connection),
         lambda: delete_client_record(data, connection),
         lambda: restore_archived_client(data, connection),
-        lambda: show_archived_clients(data, connection),
+        lambda: show_archived_clients(connection),
     )
     options = (
         "Search client profile",

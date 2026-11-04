@@ -29,7 +29,6 @@ class APIModel(BaseModel):
 class ClientInput(APIModel):
     name: str = Field(min_length=1, max_length=255)
     email: str = Field(max_length=254)
-    membership: str = Field(default="", max_length=100)
     is_pwd: bool = False
     is_student: bool = False
     is_worker: bool = False
@@ -41,7 +40,7 @@ class ClientInput(APIModel):
     )
 
     @field_validator(
-        "name", "email", "membership", "valid_id_number", mode="before"
+        "name", "email", "valid_id_number", mode="before"
     )
     @classmethod
     def strip_text(cls, value: object) -> object:
@@ -149,7 +148,7 @@ def _serialize(row: dict[str, object]) -> dict[str, object]:
             format(value, ".2f")
             if isinstance(value, Decimal)
             else bool(value)
-            if key in {"is_pwd", "is_student", "is_worker"}
+            if key in {"is_member", "is_pwd", "is_student", "is_worker"}
             else value
         )
         for key, value in row.items()
@@ -217,7 +216,7 @@ def list_clients(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, email, membership, is_pwd, is_student, "
+            "SELECT client_id, name, email, is_member, is_pwd, is_student, "
             "is_worker, valid_id_number, created_at, archived_at "
             "FROM clients WHERE (%s = TRUE OR archived_at IS NULL) "
             "ORDER BY id",
@@ -236,7 +235,7 @@ def get_client(
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT client_id, name, email, membership, is_pwd, is_student, "
+            "SELECT client_id, name, email, is_member, is_pwd, is_student, "
             "is_worker, valid_id_number, created_at, archived_at "
             "FROM clients WHERE client_id = %s",
             (client_id.upper(),),
@@ -291,14 +290,14 @@ def create_client(
         with _transaction(connection):
             cursor.execute(
                 "INSERT INTO clients "
-                "(client_id, name, email, membership, is_pwd, is_student, "
+                "(client_id, name, email, is_member, is_pwd, is_student, "
                 "is_worker, valid_id_number, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     client_id,
                     payload.name,
                     payload.email,
-                    payload.membership,
+                    False,
                     payload.is_pwd,
                     payload.is_student,
                     payload.is_worker,
@@ -323,14 +322,13 @@ def replace_client(
     try:
         with _transaction(connection):
             cursor.execute(
-                "UPDATE clients SET name = %s, email = %s, membership = %s, "
+                "UPDATE clients SET name = %s, email = %s, "
                 "is_pwd = %s, is_student = %s, is_worker = %s, "
                 "valid_id_number = %s "
                 "WHERE client_id = %s AND archived_at IS NULL",
                 (
                     payload.name,
                     payload.email,
-                    payload.membership,
                     payload.is_pwd,
                     payload.is_student,
                     payload.is_worker,
@@ -605,6 +603,20 @@ def _payment_records(
         cursor.close()
 
 
+def _refresh_client_membership(
+    cursor: mysql.connector.cursor.MySQLCursor,
+    client_id: str,
+) -> None:
+    cursor.execute(
+        "UPDATE clients SET is_member = EXISTS ("
+        "SELECT 1 FROM payments "
+        "WHERE payments.client_id = clients.client_id "
+        "AND LOWER(payments.description) = 'gym membership') "
+        "WHERE client_id = %s",
+        (client_id,),
+    )
+
+
 @app.get("/api/payments")
 def list_payments(
     connection: mysql.connector.MySQLConnection = Depends(get_connection),
@@ -645,6 +657,7 @@ def create_payment(
                 ),
             )
             payment_id = cursor.lastrowid
+            _refresh_client_membership(cursor, payload.client_id)
     finally:
         cursor.close()
     return _payment_records(connection, payment_id)
@@ -661,6 +674,15 @@ def replace_payment(
     try:
         with _transaction(connection):
             cursor.execute(
+                "SELECT client_id FROM payments WHERE id = %s",
+                (payment_id,),
+            )
+            previous_payment = cursor.fetchone()
+            if previous_payment is None:
+                raise HTTPException(
+                    status_code=404, detail="Payment record not found."
+                )
+            cursor.execute(
                 "UPDATE payments SET client_id = %s, client_name = %s, "
                 "amount = %s, description = %s WHERE id = %s",
                 (
@@ -671,13 +693,9 @@ def replace_payment(
                     payment_id,
                 ),
             )
-            if cursor.rowcount == 0:
-                cursor.execute(
-                    "SELECT 1 FROM payments WHERE id = %s",
-                    (payment_id,),
-                )
-                if cursor.fetchone() is None:
-                    raise HTTPException(status_code=404, detail="Payment record not found.")
+            _refresh_client_membership(cursor, previous_payment[0])
+            if payload.client_id != previous_payment[0]:
+                _refresh_client_membership(cursor, payload.client_id)
     finally:
         cursor.close()
     return _payment_records(connection, payment_id)
@@ -691,9 +709,17 @@ def delete_payment(
     cursor = connection.cursor()
     try:
         with _transaction(connection):
+            cursor.execute(
+                "SELECT client_id FROM payments WHERE id = %s",
+                (payment_id,),
+            )
+            payment = cursor.fetchone()
+            if payment is None:
+                raise HTTPException(
+                    status_code=404, detail="Payment record not found."
+                )
             cursor.execute("DELETE FROM payments WHERE id = %s", (payment_id,))
-            if cursor.rowcount != 1:
-                raise HTTPException(status_code=404, detail="Payment record not found.")
+            _refresh_client_membership(cursor, payment[0])
     finally:
         cursor.close()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
