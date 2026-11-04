@@ -260,6 +260,7 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
         return
 
     columns = (
+        "Payment ID",
         "Date",
         "Time",
         "Client ID",
@@ -269,6 +270,7 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
     )
     rows = [
         (
+            payment["id"],
             *format_attendance_datetime(payment["timestamp"]),
             payment["client_id"],
             payment["client_name"],

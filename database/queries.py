@@ -79,7 +79,7 @@ def load_data(
             "ORDER BY attendance.id"
         ),
         "payments": (
-            "SELECT client_id, client_name, amount, description, timestamp "
+            "SELECT id, client_id, client_name, amount, description, timestamp "
             "FROM payments ORDER BY id"
         ),
         "maintenance": (
@@ -164,6 +164,8 @@ def save_record(
                 "UPDATE clients SET is_member = TRUE WHERE client_id = %s",
                 (record["client_id"],),
             )
+        if collection == "payments":
+            record["id"] = str(cursor.lastrowid)
         if collection == "maintenance":
             record["id"] = str(cursor.lastrowid)
         connection.commit()
