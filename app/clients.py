@@ -42,6 +42,7 @@ def show_clients(
         "Student",
         "PWD",
         "Worker",
+        "Valid ID Number",
         "Created At",
     )
     rows = [
@@ -53,6 +54,7 @@ def show_clients(
             "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
+            client.get("valid_id_number", ""),
             format_created_at(client["created_at"]),
         )
         for client in clients
@@ -84,6 +86,7 @@ def show_clients(
                     "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
                     "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
                     "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
+                    client.get("valid_id_number", ""),
                     format_created_at(client["created_at"]),
                 )
             )
@@ -146,9 +149,11 @@ def add_client(
         "archived_at": "",
     }
     if record["is_pwd"] == "1" or record["is_student"] == "1":
-        record["id_number"] = prompt_required("PWD/Student ID number: ")
+        record["valid_id_number"] = prompt_required(
+            "Valid PWD/Student ID number: "
+        )
     else:
-        record["id_number"] = ""
+        record["valid_id_number"] = ""
 
     print(
         "\nNew client details:\n"
@@ -158,8 +163,8 @@ def add_client(
         f"  Student: {'Yes' if record['is_student'] == '1' else 'No'}\n"
         f"  Worker: {'Yes' if record['is_worker'] == '1' else 'No'}"
         + (
-            f"\n  ID number: {record['id_number']}"
-            if record["id_number"]
+            f"\n  Valid ID number: {record['valid_id_number']}"
+            if record["valid_id_number"]
             else ""
         )
     )
@@ -199,6 +204,38 @@ def update_client_profile(
     membership = input(
         f"Membership plan [{client['membership']}]: "
     ).strip() or client["membership"]
+    is_pwd = str(
+        int(
+            prompt_yes_no(
+                "Is the client a PWD?",
+                current=client.get("is_pwd", "0").lower() in {"1", "true"},
+            )
+        )
+    )
+    is_student = str(
+        int(
+            prompt_yes_no(
+                "Is the client a Student?",
+                current=client.get("is_student", "0").lower() in {"1", "true"},
+            )
+        )
+    )
+    if is_pwd == "1" or is_student == "1":
+        current_id_number = client.get("valid_id_number", "").strip()
+        if current_id_number:
+            valid_id_number = (
+                input(
+                    f"Valid PWD/Student ID number [{current_id_number}] "
+                    "(Enter to keep): "
+                ).strip()
+                or current_id_number
+            )
+        else:
+            valid_id_number = prompt_required(
+                "Valid PWD/Student ID number: "
+            )
+    else:
+        valid_id_number = ""
     is_worker = str(
         int(
             prompt_yes_no(
@@ -234,6 +271,9 @@ def update_client_profile(
         f"  Name: {name}\n"
         f"  Email: {email}\n"
         f"  Membership: {membership}\n"
+        f"  PWD: {'Yes' if is_pwd == '1' else 'No'}\n"
+        f"  Student: {'Yes' if is_student == '1' else 'No'}\n"
+        f"  Valid ID number: {valid_id_number}\n"
         f"  Worker: {'Yes' if is_worker == '1' else 'No'}"
     )
     confirmation = input(
@@ -249,9 +289,20 @@ def update_client_profile(
         name,
         email,
         membership,
+        is_pwd,
+        is_student,
         is_worker,
+        valid_id_number,
     ):
-        client.update(name=name, email=email, membership=membership, is_worker=is_worker)
+        client.update(
+            name=name,
+            email=email,
+            membership=membership,
+            is_pwd=is_pwd,
+            is_student=is_student,
+            is_worker=is_worker,
+            valid_id_number=valid_id_number,
+        )
         print(f"Client profile {client['client_id']} updated.")
     else:
         print("That client is no longer active.")
@@ -293,6 +344,7 @@ def display_archived_clients_table(
         "Client ID",
         "Name",
         "Email",
+        "Valid ID Number",
         "is_member",
         "Created At",
         "Archived At",
@@ -302,6 +354,7 @@ def display_archived_clients_table(
             client["client_id"],
             client["name"],
             client["email"],
+            client.get("valid_id_number", ""),
             "Yes" if client_is_member(payments, client["client_id"]) else "No",
             format_created_at(client["created_at"]),
             format_created_at(client["archived_at"]),

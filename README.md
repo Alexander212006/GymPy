@@ -126,8 +126,10 @@ selection, while their historical records remain in the database.
 
 New client profiles require a valid email address. During profile creation,
 GymPy asks whether the client is a PWD, a student, or a worker, and requests an
-ID number if the client is a PWD or student. Client records can be searched by
-ID, name, or email from the Client Records menu.
+valid ID number if the client is a PWD or student. The valid ID number is
+stored on the client profile, shown in active and archived client tables, and
+required for PWD/student clients submitted through the API. Client records can
+be searched by ID, name, or email from the Client Records menu.
 Existing databases receive missing client profile columns automatically on
 startup; the migration permanently deletes the old client contact column and
 its stored values.

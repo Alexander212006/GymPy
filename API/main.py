@@ -6,7 +6,14 @@ from typing import AsyncGenerator, Generator, overload
 
 import mysql.connector
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+)
 
 from app.common import current_timestamp, next_client_id
 from database.connection import connect_database, initialize_database
@@ -26,9 +33,16 @@ class ClientInput(APIModel):
     is_pwd: bool = False
     is_student: bool = False
     is_worker: bool = False
-    id_number: str = Field(default="", max_length=100)
+    valid_id_number: str = Field(
+        default="",
+        max_length=100,
+        validate_default=True,
+        validation_alias=AliasChoices("valid_id_number", "id_number"),
+    )
 
-    @field_validator("name", "email", "membership", "id_number", mode="before")
+    @field_validator(
+        "name", "email", "membership", "valid_id_number", mode="before"
+    )
     @classmethod
     def strip_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -45,6 +59,15 @@ class ClientInput(APIModel):
     def email_must_be_valid(cls, value: str) -> str:
         if not EMAIL_PATTERN.fullmatch(value):
             raise ValueError("Enter a valid email address.")
+        return value
+
+    @field_validator("valid_id_number")
+    @classmethod
+    def require_id_for_pwd_or_student(
+        cls, value: str, info: ValidationInfo
+    ) -> str:
+        if (info.data.get("is_pwd") or info.data.get("is_student")) and not value:
+            raise ValueError("PWD or student clients must provide a valid ID number.")
         return value
 
 
@@ -195,7 +218,7 @@ def list_clients(
     try:
         cursor.execute(
             "SELECT client_id, name, email, membership, is_pwd, is_student, "
-            "is_worker, id_number, created_at, archived_at "
+            "is_worker, valid_id_number, created_at, archived_at "
             "FROM clients WHERE (%s = TRUE OR archived_at IS NULL) "
             "ORDER BY id",
             (include_archived,),
@@ -214,7 +237,7 @@ def get_client(
     try:
         cursor.execute(
             "SELECT client_id, name, email, membership, is_pwd, is_student, "
-            "is_worker, id_number, created_at, archived_at "
+            "is_worker, valid_id_number, created_at, archived_at "
             "FROM clients WHERE client_id = %s",
             (client_id.upper(),),
         )
@@ -269,7 +292,7 @@ def create_client(
             cursor.execute(
                 "INSERT INTO clients "
                 "(client_id, name, email, membership, is_pwd, is_student, "
-                "is_worker, id_number, created_at) "
+                "is_worker, valid_id_number, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     client_id,
@@ -279,7 +302,7 @@ def create_client(
                     payload.is_pwd,
                     payload.is_student,
                     payload.is_worker,
-                    payload.id_number,
+                    payload.valid_id_number,
                     current_timestamp(),
                 ),
             )
@@ -301,7 +324,8 @@ def replace_client(
         with _transaction(connection):
             cursor.execute(
                 "UPDATE clients SET name = %s, email = %s, membership = %s, "
-                "is_pwd = %s, is_student = %s, is_worker = %s, id_number = %s "
+                "is_pwd = %s, is_student = %s, is_worker = %s, "
+                "valid_id_number = %s "
                 "WHERE client_id = %s AND archived_at IS NULL",
                 (
                     payload.name,
@@ -310,7 +334,7 @@ def replace_client(
                     payload.is_pwd,
                     payload.is_student,
                     payload.is_worker,
-                    payload.id_number,
+                    payload.valid_id_number,
                     client_id,
                 ),
             )

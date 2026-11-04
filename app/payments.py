@@ -34,7 +34,7 @@ def record_payment(
         "Student",
         "PWD",
         "Worker",
-        "ID Number",
+        "Valid ID Number",
     )
     rows = [
         (
@@ -44,7 +44,7 @@ def record_payment(
             "Yes" if client.get("is_student", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_pwd", "").lower() in {"1", "true"} else "No",
             "Yes" if client.get("is_worker", "").lower() in {"1", "true"} else "No",
-            client.get("id_number", ""),
+            client.get("valid_id_number", ""),
         )
         for client in clients
     ]
