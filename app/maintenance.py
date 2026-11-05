@@ -1,5 +1,6 @@
 import mysql.connector
 
+from .employees import prompt_employee_name
 from database.queries import save_record, update_maintenance_record
 
 from .common import current_timestamp, format_created_at, prompt_amount, prompt_required
@@ -18,6 +19,7 @@ def record_maintenance(
             "Last Serviced",
             "Machine",
             "Maintenance Performed",
+            "Performed By",
             "Cost (PHP)",
         )
         rows = [
@@ -26,6 +28,7 @@ def record_maintenance(
                 format_created_at(record["timestamp"]),
                 record["machine"],
                 record["description"],
+                record.get("performed_by", ""),
                 record["cost"],
             )
             for record in maintenance_records
@@ -65,9 +68,16 @@ def record_maintenance(
         print("Invalid option. Choose 1, 2, or 3.")
 
     print("\nMACHINE MAINTENANCE RECORD")
+    performed_by = prompt_employee_name(
+        connection,
+        "Employee performing maintenance: ",
+    )
+    if performed_by is None:
+        return
     record = {
         "machine": prompt_required("Machine or equipment name: "),
         "description": prompt_required("Maintenance performed: "),
+        "performed_by": performed_by,
         "cost": prompt_amount("Maintenance cost (enter 0 if none): ", allow_zero=True),
         "timestamp": current_timestamp(),
     }
@@ -97,6 +107,13 @@ def edit_maintenance_record(
     description = input(
         f"Maintenance performed [{record['description']}]: "
     ).strip() or record["description"]
+    performed_by = prompt_employee_name(
+        connection,
+        "Employee performing maintenance: ",
+        current_name=record.get("performed_by"),
+    )
+    if performed_by is None:
+        return
     cost = prompt_amount(
         f"Maintenance cost [{record['cost']}]: ",
         allow_zero=True,
@@ -108,6 +125,7 @@ def edit_maintenance_record(
         f"  Record ID: {record_id}\n"
         f"  Machine: {machine}\n"
         f"  Maintenance performed: {description}\n"
+        f"  Performed by: {performed_by}\n"
         f"  Cost: PHP {cost}\n"
         f"  Last serviced: {format_created_at(record['timestamp'])}"
     )
@@ -122,8 +140,14 @@ def edit_maintenance_record(
         machine,
         description,
         cost,
+        performed_by,
     ):
-        record.update(machine=machine, description=description, cost=cost)
+        record.update(
+            machine=machine,
+            description=description,
+            cost=cost,
+            performed_by=performed_by,
+        )
         print(f"Maintenance record {record_id} updated.")
     else:
         print(f"Maintenance record {record_id} no longer exists.")

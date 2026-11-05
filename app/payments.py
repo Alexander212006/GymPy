@@ -2,6 +2,7 @@ from datetime import datetime
 
 import mysql.connector
 
+from .employees import prompt_employee_name
 from database.queries import save_record
 
 from .common import (
@@ -13,6 +14,7 @@ from .common import (
     format_attendance_datetime,
     select_client,
 )
+
 
 def record_payment(
     data: dict[str, list[dict[str, str]]],
@@ -130,12 +132,19 @@ def record_payment(
         )
         return
 
+    assisting_employee = prompt_employee_name(
+        connection,
+        "Employee assisting with payment: ",
+    )
+    if assisting_employee is None:
+        return
     record = {
         "client_id": client["client_id"],
         "client_name": client["name"],
         "amount": f"{amount:.2f}",
         "description": description,
         "timestamp": current_timestamp(),
+        "assisting_employee": assisting_employee,
     }
     if is_pwd and is_student:
         discount = "PWD and Student"
@@ -149,6 +158,7 @@ def record_payment(
     print(
         f"\nPayment summary:\n"
         f"  Client: {client['name']} ({client['client_id']})\n"
+        f"  Employee assisting: {record['assisting_employee']}\n"
         f"  Service: {description}\n"
         f"  Discount: {discount} (PHP {discount_amount:.2f})\n"
         f"  Amount due: PHP {record['amount']}"
@@ -267,6 +277,7 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
         "Client Name",
         "Amount (PHP)",
         "Description",
+        "Employee Assisting",
     )
     rows = [
         (
@@ -276,6 +287,7 @@ def show_payment_history(data: dict[str, list[dict[str, str]]]) -> None:
             payment["client_name"],
             payment["amount"],
             payment["description"],
+            payment.get("assisting_employee", ""),
         )
         for payment in payments
     ]

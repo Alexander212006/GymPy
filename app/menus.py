@@ -2,6 +2,7 @@ import mysql.connector
 
 from .attendance import log_attendance, show_attendance_records
 from .clients import add_client, client_records_menu
+from .employees import add_employee
 from .maintenance import record_maintenance
 from .payments import membership_payment_menu, show_active_sessions, show_payment_history
 
@@ -14,6 +15,7 @@ MENU_OPTIONS = (
     "Payment history",
     "View active sessions",
     "Machine maintenance record",
+    "Add employee profile",
 )
 
 
@@ -30,6 +32,7 @@ def show_menu(
         show_payment_history,
         show_active_sessions,
         lambda records: record_maintenance(records, connection),
+        lambda records: add_employee(records, connection),
     )
     while True:
         print("\n" + "=" * 42)

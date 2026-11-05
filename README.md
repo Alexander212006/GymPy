@@ -34,7 +34,8 @@ records directly in MySQL.
 
 Application code is split by responsibility under `app/`: `main.py` starts the
 program, `menus.py` handles navigation, and `clients.py`, `attendance.py`,
-`payments.py`, and `maintenance.py` contain their respective workflows.
+`employees.py`, `payments.py`, and `maintenance.py` contain their respective
+workflows.
 Shared prompts, formatting, and service constants are in `common.py`;
 authentication is in `auth.py`.
 
@@ -136,8 +137,10 @@ startup. The migration replaces the old client `membership` text column with
 the `is_member` Boolean, setting it from Gym Membership payment history, and
 permanently deletes the old client contact column and its stored values.
 
-Service payments use the rates displayed in the services menu. Member rates
-apply after a Gym membership payment has been recorded; each client can
+Service payments use the rates displayed in the services menu. The payment
+form accepts only an employee name matching a profile in the database and
+records that employee as assisting with the payment. Member rates apply after a
+Gym membership payment has been recorded; each client can
 purchase Gym membership only once. Full month, half month, and daily sessions
 remain valid for 30, 15, and 1 day respectively. Clients cannot purchase any
 additional service while one of these sessions is still valid. GymPy displays
@@ -150,4 +153,11 @@ with its purchase and expiration times.
 
 The **Machine maintenance record** option displays a maintenance history table
 with record IDs and the date each machine was last serviced, then lets staff
-add or edit a record, or return to the main menu.
+add or edit a record, or return to the main menu. New and edited records
+require the name of an employee profile already in the database, and show who
+performed the maintenance.
+
+The **Add employee profile** option saves an employee's first and last name,
+contact number, address, sex, and age to the `employees` table. Employee
+contact numbers must be 11 digits and start with `09`; age must be from 18 to
+50.

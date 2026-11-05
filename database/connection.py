@@ -26,6 +26,18 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
         for statement in schema.split(";"):
             if statement.strip():
                 cursor.execute(statement)
+        cursor.execute("SHOW COLUMNS FROM payments LIKE 'assisting_employee'")
+        if cursor.fetchone() is None:
+            cursor.execute(
+                "ALTER TABLE payments ADD COLUMN assisting_employee "
+                "VARCHAR(255) NOT NULL DEFAULT ''"
+            )
+        cursor.execute("SHOW COLUMNS FROM maintenance LIKE 'performed_by'")
+        if cursor.fetchone() is None:
+            cursor.execute(
+                "ALTER TABLE maintenance ADD COLUMN performed_by "
+                "VARCHAR(255) NOT NULL DEFAULT ''"
+            )
         cursor.execute("SHOW COLUMNS FROM clients LIKE 'contact'")
         if cursor.fetchone() is not None:
             cursor.execute("ALTER TABLE clients DROP COLUMN contact")

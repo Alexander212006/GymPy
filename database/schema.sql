@@ -12,6 +12,16 @@ CREATE TABLE IF NOT EXISTS clients (
     archived_at VARCHAR(40) NULL
 );
 
+CREATE TABLE IF NOT EXISTS employees (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    contact_number VARCHAR(30) NOT NULL,
+    address TEXT NOT NULL,
+    sex VARCHAR(50) NOT NULL,
+    age TINYINT UNSIGNED NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS attendance (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     client_id VARCHAR(20) NOT NULL,
@@ -27,6 +37,7 @@ CREATE TABLE IF NOT EXISTS payments (
     amount DECIMAL(10, 2) NOT NULL,
     description VARCHAR(255) NOT NULL,
     timestamp VARCHAR(40) NOT NULL,
+    assisting_employee VARCHAR(255) NOT NULL DEFAULT '',
     FOREIGN KEY (client_id) REFERENCES clients (client_id)
 );
 
@@ -35,7 +46,8 @@ CREATE TABLE IF NOT EXISTS maintenance (
     machine VARCHAR(255) NOT NULL,
     description VARCHAR(255) NOT NULL,
     cost DECIMAL(10, 2) NOT NULL,
-    timestamp VARCHAR(40) NOT NULL
+    timestamp VARCHAR(40) NOT NULL,
+    performed_by VARCHAR(255) NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS app_credentials (

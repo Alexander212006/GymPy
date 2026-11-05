@@ -127,8 +127,9 @@ class MaintenanceInput(APIModel):
     machine: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1, max_length=255)
     cost: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    performed_by: str | None = Field(default=None, max_length=255)
 
-    @field_validator("machine", "description", mode="before")
+    @field_validator("machine", "description", "performed_by", mode="before")
     @classmethod
     def strip_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -408,6 +409,31 @@ def _get_active_client(
         cursor.close()
 
 
+def _ensure_employee_exists(
+    connection: mysql.connector.MySQLConnection,
+    employee_name: str | None,
+) -> None:
+    if not employee_name:
+        return
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SELECT first_name, last_name FROM employees")
+        employees = cursor.fetchall()
+    finally:
+        cursor.close()
+
+    normalized_name = " ".join(employee_name.split()).casefold()
+    if not any(
+        " ".join(f"{first_name} {last_name}".split()).casefold() == normalized_name
+        for first_name, last_name in employees
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Performed-by name must match an existing employee profile.",
+        )
+
+
 @overload
 def _attendance_records(
     connection: mysql.connector.MySQLConnection,
@@ -588,7 +614,8 @@ def _payment_records(
     cursor = connection.cursor(dictionary=True)
     try:
         query = (
-            "SELECT id, client_id, client_name, amount, description, timestamp "
+            "SELECT id, client_id, client_name, amount, description, timestamp, "
+            "assisting_employee "
             "FROM payments"
         )
         if payment_id is not None:
@@ -745,7 +772,10 @@ def _maintenance_records(
 ) -> list[dict[str, object]] | dict[str, object]:
     cursor = connection.cursor(dictionary=True)
     try:
-        query = "SELECT id, machine, description, cost, timestamp FROM maintenance"
+        query = (
+            "SELECT id, machine, description, cost, timestamp, performed_by "
+            "FROM maintenance"
+        )
         if record_id is not None:
             cursor.execute(query + " WHERE id = %s", (record_id,))
             row = cursor.fetchone()
@@ -781,17 +811,20 @@ def create_maintenance(
     payload: MaintenanceInput,
     connection: mysql.connector.MySQLConnection = Depends(get_connection),
 ) -> dict[str, object]:
+    _ensure_employee_exists(connection, payload.performed_by)
     cursor = connection.cursor()
     try:
         with _transaction(connection):
             cursor.execute(
-                "INSERT INTO maintenance (machine, description, cost, timestamp) "
-                "VALUES (%s, %s, %s, %s)",
+                "INSERT INTO maintenance "
+                "(machine, description, cost, timestamp, performed_by) "
+                "VALUES (%s, %s, %s, %s, %s)",
                 (
                     payload.machine,
                     payload.description,
                     payload.cost,
                     current_timestamp(),
+                    payload.performed_by or "",
                 ),
             )
             record_id = cursor.lastrowid
@@ -806,13 +839,21 @@ def replace_maintenance(
     payload: MaintenanceInput,
     connection: mysql.connector.MySQLConnection = Depends(get_connection),
 ) -> dict[str, object]:
+    _ensure_employee_exists(connection, payload.performed_by)
     cursor = connection.cursor()
     try:
         with _transaction(connection):
             cursor.execute(
                 "UPDATE maintenance SET machine = %s, description = %s, "
-                "cost = %s WHERE id = %s",
-                (payload.machine, payload.description, payload.cost, record_id),
+                "cost = %s, performed_by = COALESCE(%s, performed_by) "
+                "WHERE id = %s",
+                (
+                    payload.machine,
+                    payload.description,
+                    payload.cost,
+                    payload.performed_by,
+                    record_id,
+                ),
             )
             if cursor.rowcount == 0:
                 cursor.execute(

@@ -35,8 +35,8 @@ def _insert_record(
     elif collection == "payments":
         statement = (
             "INSERT INTO payments "
-            "(client_id, client_name, amount, description, timestamp) "
-            "VALUES (%s, %s, %s, %s, %s)"
+            "(client_id, client_name, amount, description, timestamp, "
+            "assisting_employee) VALUES (%s, %s, %s, %s, %s, %s)"
         )
         values = (
             record["client_id"],
@@ -44,17 +44,34 @@ def _insert_record(
             record["amount"],
             record["description"],
             record["timestamp"],
+            record.get("assisting_employee", ""),
         )
     elif collection == "maintenance":
         statement = (
-            "INSERT INTO maintenance (machine, description, cost, timestamp) "
-            "VALUES (%s, %s, %s, %s)"
+            "INSERT INTO maintenance "
+            "(machine, description, cost, timestamp, performed_by) "
+            "VALUES (%s, %s, %s, %s, %s)"
         )
         values = (
             record["machine"],
             record["description"],
             record["cost"],
             record["timestamp"],
+            record.get("performed_by", ""),
+        )
+    elif collection == "employees":
+        statement = (
+            "INSERT INTO employees "
+            "(first_name, last_name, contact_number, address, sex, age) "
+            "VALUES (%s, %s, %s, %s, %s, %s)"
+        )
+        values = (
+            record["first_name"],
+            record["last_name"],
+            record["contact_number"],
+            record["address"],
+            record["sex"],
+            record["age"],
         )
     else:
         raise ValueError(f"Unknown data collection: {collection}")
@@ -79,12 +96,17 @@ def load_data(
             "ORDER BY attendance.id"
         ),
         "payments": (
-            "SELECT id, client_id, client_name, amount, description, timestamp "
+            "SELECT id, client_id, client_name, amount, description, timestamp, "
+            "assisting_employee "
             "FROM payments ORDER BY id"
         ),
         "maintenance": (
-            "SELECT id, machine, description, cost, timestamp "
+            "SELECT id, machine, description, cost, timestamp, performed_by "
             "FROM maintenance ORDER BY id"
+        ),
+        "employees": (
+            "SELECT id, first_name, last_name, contact_number, address, sex, age "
+            "FROM employees ORDER BY id"
         ),
     }
     data: dict[str, list[dict[str, str]]] = {}
@@ -236,13 +258,15 @@ def update_maintenance_record(
     machine: str,
     description: str,
     cost: str,
+    performed_by: str,
 ) -> bool:
     cursor = connection.cursor()
     try:
         cursor.execute(
-            "UPDATE maintenance SET machine = %s, description = %s, cost = %s "
+            "UPDATE maintenance SET machine = %s, description = %s, cost = %s, "
+            "performed_by = %s "
             "WHERE id = %s",
-            (machine, description, cost, record_id),
+            (machine, description, cost, performed_by, record_id),
         )
         if cursor.rowcount == 0:
             cursor.execute("SELECT 1 FROM maintenance WHERE id = %s", (record_id,))
