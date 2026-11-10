@@ -1,6 +1,6 @@
 import mysql.connector
 
-from API import send_client_welcome_email
+from API import send_client_welcome_email_once
 from database.queries import (
     archive_client,
     load_archived_clients,
@@ -174,12 +174,8 @@ def add_client(
 
     save_record(connection, data, "clients", record)
     print(f"Client profile saved. Client ID: {record['client_id']}")
-    try:
-        send_client_welcome_email(record)
-    except RuntimeError as error:
-        print(f"Welcome email could not be sent: {error}")
-    else:
-        print(f"Welcome email sent to {record['email']}.")
+    email_result = send_client_welcome_email_once(connection, record)
+    print(email_result.message)
 
 def update_client_profile(
     data: dict[str, list[dict[str, str]]],

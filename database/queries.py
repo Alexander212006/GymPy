@@ -12,8 +12,9 @@ def _insert_record(
         statement = (
             "INSERT INTO clients "
             "(client_id, name, email, is_member, is_pwd, "
-            "is_student, is_worker, valid_id_number, created_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "is_student, is_worker, valid_id_number, created_at, "
+            "welcome_email_status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')"
         )
         values = (
             record["client_id"],
@@ -205,6 +206,73 @@ def save_record(
             if client["client_id"] == record["client_id"]:
                 client["is_member"] = "1"
                 break
+
+
+def claim_client_welcome_email(
+    connection: mysql.connector.MySQLConnection,
+    client_id: str,
+    attempted_at: str,
+) -> bool:
+    """Atomically reserve a client's one automatic welcome-email attempt."""
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE clients SET welcome_email_status = 'sending', "
+            "welcome_email_attempted_at = %s "
+            "WHERE client_id = %s AND welcome_email_status = 'pending'",
+            (attempted_at, client_id),
+        )
+        claimed = cursor.rowcount == 1
+        connection.commit()
+        return claimed
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
+def mark_client_welcome_email_failed(
+    connection: mysql.connector.MySQLConnection,
+    client_id: str,
+) -> None:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE clients SET welcome_email_status = 'failed' "
+            "WHERE client_id = %s AND welcome_email_status = 'sending'",
+            (client_id,),
+        )
+        connection.commit()
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
+def mark_client_welcome_email_sent(
+    connection: mysql.connector.MySQLConnection,
+    client_id: str,
+    sent_at: str,
+    message_id: str | None,
+) -> bool:
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE clients SET welcome_email_status = 'sent', "
+            "welcome_email_sent_at = %s, welcome_email_message_id = %s "
+            "WHERE client_id = %s AND welcome_email_status = 'sending'",
+            (sent_at, message_id, client_id),
+        )
+        receipt_saved = cursor.rowcount == 1
+        connection.commit()
+        return receipt_saved
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+    finally:
+        cursor.close()
 
 
 def update_client(

@@ -15,6 +15,7 @@ from pydantic import (
     field_validator,
 )
 
+from API.brevo import send_client_welcome_email_once
 from app.common import current_timestamp, next_client_id
 from database.connection import connect_database, initialize_database
 
@@ -292,8 +293,8 @@ def create_client(
             cursor.execute(
                 "INSERT INTO clients "
                 "(client_id, name, email, is_member, is_pwd, is_student, "
-                "is_worker, valid_id_number, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "is_worker, valid_id_number, created_at, welcome_email_status) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending')",
                 (
                     client_id,
                     payload.name,
@@ -308,7 +309,10 @@ def create_client(
             )
     finally:
         cursor.close()
-    return get_client(client_id, connection)
+    client = get_client(client_id, connection)
+    email_result = send_client_welcome_email_once(connection, client)
+    client["welcome_email"] = email_result.as_dict()
+    return client
 
 
 @app.put("/api/clients/{client_id}")

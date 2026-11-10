@@ -1,5 +1,13 @@
 """External service integrations used by GymPy."""
 
-from .brevo import send_client_welcome_email
+from .brevo import (
+    WelcomeEmailResult,
+    send_client_welcome_email,
+    send_client_welcome_email_once,
+)
 
-__all__ = ["send_client_welcome_email"]
+__all__ = [
+    "WelcomeEmailResult",
+    "send_client_welcome_email",
+    "send_client_welcome_email_once",
+]

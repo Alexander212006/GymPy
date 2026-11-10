@@ -95,11 +95,43 @@ def initialize_database(connection: mysql.connector.MySQLConnection) -> None:
             cursor.execute(
                 "ALTER TABLE clients DROP COLUMN membership"
             )
+        cursor.execute("SHOW COLUMNS FROM clients LIKE 'welcome_email_status'")
+        welcome_email_status_column = cursor.fetchone()
+        if welcome_email_status_column is None:
+            # Existing clients predate automatic welcome emails. Mark them as
+            # ineligible so a future code path cannot email them by accident.
+            cursor.execute(
+                "ALTER TABLE clients ADD COLUMN welcome_email_status "
+                "VARCHAR(20) NOT NULL DEFAULT 'not_applicable'"
+            )
+            cursor.execute(
+                "ALTER TABLE clients MODIFY COLUMN welcome_email_status "
+                "VARCHAR(20) NOT NULL DEFAULT 'pending'"
+            )
+        elif welcome_email_status_column[4] != "pending":
+            cursor.execute(
+                "ALTER TABLE clients MODIFY COLUMN welcome_email_status "
+                "VARCHAR(20) NOT NULL DEFAULT 'pending'"
+            )
+        for column, definition in (
+            ("welcome_email_attempted_at", "VARCHAR(40) NULL"),
+            ("welcome_email_sent_at", "VARCHAR(40) NULL"),
+            ("welcome_email_message_id", "VARCHAR(255) NULL"),
+        ):
+            cursor.execute(f"SHOW COLUMNS FROM clients LIKE '{column}'")
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    f"ALTER TABLE clients ADD COLUMN {column} {definition}"
+                )
         cursor.execute(
             "UPDATE clients SET is_member = EXISTS ("
             "SELECT 1 FROM payments "
             "WHERE payments.client_id = clients.client_id "
             "AND LOWER(payments.description) = 'gym membership')"
         )
+        connection.commit()
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
     finally:
         cursor.close()

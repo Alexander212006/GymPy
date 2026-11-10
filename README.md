@@ -102,9 +102,10 @@ amounts and costs are returned as decimal strings. Client responses include
 
 ## Brevo welcome emails
 
-After a client profile is saved, GymPy sends a welcome email through Brevo's
-transactional email API. Open the `.env` file in the project folder and fill in
-the Brevo credentials:
+After a new client profile is committed to MySQL, both the terminal application
+and `POST /api/clients` automatically request a welcome email through Brevo's
+transactional email API. Create a Brevo API key, verify the sender address (or
+its domain) in Brevo, and add these values to the project `.env` file:
 
 ```dotenv
 BREVO_API_KEY=your-brevo-api-key
@@ -113,13 +114,57 @@ BREVO_SENDER_NAME=GymPy
 ```
 
 Install dependencies with `python -m pip install -r requirements.txt` if
-needed. GymPy loads `.env` on startup, and `.env` is excluded from Git so the
-API key is not committed.
+needed. Use a Brevo **API key**, not an SMTP key. The Brevo integration loads
+its settings directly from the project-root `.env` on startup, and `.env` is
+excluded from Git so the API key is not committed. Keep real credentials out
+of `.env.example`, source control, screenshots, and logs.
 
-Verify the sender address in Brevo before use. If email configuration or
-delivery fails, GymPy keeps the saved client profile and reports the email
-error. The email includes the client's name, client ID, and registered email;
-it never includes the stored student/PWD ID number.
+The branded dark-green message includes the client's name, client ID, and
+registered email; it never includes the stored student/PWD ID number. The
+plain-text fallback contains the same essential details.
+
+The API returns the saved client with a `welcome_email` object. Its `status` is
+`sent` when Brevo accepted the message, `failed` when the request could not be
+sent, or `skipped` when an attempt was already recorded. The terminal displays
+the equivalent message. A failure never removes or rolls back the saved client.
+
+GymPy atomically records each welcome-email attempt in MySQL and also sends a
+stable Brevo idempotency key. It does not automatically retry a failed or
+uncertain attempt, preventing repeated requests, process restarts, or accidental
+retries from sending duplicate welcome messages.
+
+### Test a welcome email
+
+1. Put valid Brevo settings in `.env` and use an inbox you can access for the
+   new client's email address.
+2. Start either `python -m app.main` and add a client, or start the API and send
+   a `POST /api/clients` request with a new email address.
+3. Confirm the terminal message or the API response reports `sent`. This means
+   Brevo accepted the message for delivery.
+4. Check the recipient inbox and Brevo's transactional email logs. Repeating
+   the same registration does not send another welcome email.
+
+Run the mocked automated checks without contacting Brevo or MySQL:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+### Troubleshoot welcome email delivery
+
+- `Set BREVO_API_KEY...` means one or both required `.env` values are missing.
+- HTTP 401 means Brevo rejected authentication. Read the accompanying provider
+  message: besides an invalid or expired key, Brevo may reject a request from
+  an unrecognized public IP until that IP is added under Brevo's authorized-IP
+  security settings. HTTP 403 indicates insufficient key permissions, and HTTP
+  429 indicates a Brevo rate or plan limit.
+- A connection error points to DNS, firewall, proxy, or general network access.
+- If GymPy reports that Brevo accepted the message but it does not arrive,
+  inspect Brevo's transactional logs, the recipient's spam folder, suppression
+  status, and the sender domain's SPF/DKIM configuration.
+- Inspect `welcome_email_status`, `welcome_email_attempted_at`,
+  `welcome_email_sent_at`, and `welcome_email_message_id` on the client's MySQL
+  row when diagnosing an attempt. Never print or log `BREVO_API_KEY`.
 
 The **Client records** main-menu option opens a submenu to view and update
 active clients, archive a client, restore a client, and view archived profiles.

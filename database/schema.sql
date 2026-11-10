@@ -9,7 +9,11 @@ CREATE TABLE IF NOT EXISTS clients (
     is_worker BOOLEAN NOT NULL DEFAULT FALSE,
     valid_id_number VARCHAR(100) NOT NULL DEFAULT '',
     created_at VARCHAR(40) NOT NULL,
-    archived_at VARCHAR(40) NULL
+    archived_at VARCHAR(40) NULL,
+    welcome_email_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    welcome_email_attempted_at VARCHAR(40) NULL,
+    welcome_email_sent_at VARCHAR(40) NULL,
+    welcome_email_message_id VARCHAR(255) NULL
 );
 
 CREATE TABLE IF NOT EXISTS employees (
